@@ -1,5 +1,6 @@
 import io
 import gc
+import keyword
 import os
 import csv
 import time
@@ -285,7 +286,7 @@ class VisualizerApi():
 
         start_time_reduction = time.time()
 
-        if 'buffer-depth' in channel_name and 'micro' not in channel_name:
+        if 'buffer-depth' in channel_name and 'micro' not in channel_name and 'adj' not in channel_name:
             channel_name = 'buffer-depths'
         if 'tank' in channel_name and 'depth' in channel_name and 'micro' not in channel_name:
             channel_name = 'tank-depths'
@@ -1984,7 +1985,7 @@ class VisualizerApi():
 
         min_buffer_temp, max_buffer_temp = 1e5, 0
         if 'buffer-depths' in request.selected_channels:
-            buffer_channels = sorted([key for key in self.data[request]['channels'].keys() if 'buffer-depth' in key and 'micro-v' not in key])
+            buffer_channels = sorted([key for key in self.data[request]['channels'].keys() if 'buffer-depth' in key and 'micro-v' not in key and 'adj' not in key])
             for buffer_channel in buffer_channels:
                 min_buffer_temp = min(min_buffer_temp, min([self.to_fahrenheit(x/1000) for x in self.data[request]['channels'][buffer_channel]['values']]))
                 max_buffer_temp = max(max_buffer_temp, max([self.to_fahrenheit(x/1000) for x in self.data[request]['channels'][buffer_channel]['values']]))
