@@ -288,7 +288,7 @@ class VisualizerApi():
 
         if 'buffer-depth' in channel_name and 'micro' not in channel_name and 'adj' not in channel_name:
             channel_name = 'buffer-depths'
-        if 'tank' in channel_name and 'depth' in channel_name and 'micro' not in channel_name:
+        if 'tank' in channel_name and 'depth' in channel_name and 'micro' not in channel_name and 'adj' not in channel_name:
             channel_name = 'tank-depths'
         if 'zone' in channel_name:
             channel_name = 'zone'
@@ -883,11 +883,11 @@ class VisualizerApi():
                                     channels_to_export.append(c)
                         elif channel == 'buffer-depths':
                             for c in self.data[request]['channels'].keys():
-                                if 'depth' in c and 'buffer' in c and 'micro' not in c:
+                                if 'depth' in c and 'buffer' in c and 'micro' not in c and 'adj' not in c:
                                     channels_to_export.append(c)
                         elif channel == 'storage-depths':
                             for c in self.data[request]['channels'].keys():
-                                if 'depth' in c and 'tank' in c and 'micro' not in c:
+                                if 'depth' in c and 'tank' in c and 'micro' not in c and 'adj' not in c:
                                     channels_to_export.append(c)
                         elif channel == 'relays':
                             for c in self.data[request]['channels'].keys():
@@ -2102,7 +2102,7 @@ class VisualizerApi():
         min_store_temp, max_store_temp = 1e5, 0
         if 'storage-depths' in request.selected_channels:
             plotting_temperatures = True
-            tank_channels = sorted([key for key in self.data[request]['channels'].keys() if 'tank' in key and 'micro-v' not in key])
+            tank_channels = sorted([key for key in self.data[request]['channels'].keys() if 'tank' in key and 'micro-v' not in key and 'adj' not in key])
             for tank_channel in tank_channels:
                 min_store_temp = min(min_store_temp, min([self.to_fahrenheit(x/1000) for x in self.data[request]['channels'][tank_channel]['values']]))
                 max_store_temp = max(max_store_temp, max([self.to_fahrenheit(x/1000) for x in self.data[request]['channels'][tank_channel]['values']]))
