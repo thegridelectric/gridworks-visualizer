@@ -923,7 +923,7 @@ class VisualizerApi():
 
                 # Check the amount of data that will be generated
                 num_points = int((request.end_ms - request.start_ms) / (request.timestep * 1000) + 1)
-                if num_points * len(channels_to_export) > 3600 * 24 * 3 * len(self.data[request]['channels']):
+                if not self.running_locally and num_points * len(channels_to_export) > 3600 * 24 * 3 * len(self.data[request]['channels']):
                     error_message = f"This request would generate too many data points ({num_points*len(channels_to_export)})."
                     error_message += "\n\nSuggestions:\n- Increase the time step\n- Reduce the number of channels"
                     error_message += "\n- Reduce the difference between the start and end time"
@@ -2244,7 +2244,6 @@ class VisualizerApi():
         else:
             max_store_flow = 0
         max_power = max(max_required_energy, max_usable_energy, max_store_pump_pwr, max_store_flow)
-        print(f"Max power: {max_power}")
 
         if plotting_temperatures and plotting_power:
             fig.update_layout(yaxis=dict(title='Temperature [F]', range=[min_store_temp-80, max_store_temp+80]))
