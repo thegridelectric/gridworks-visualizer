@@ -449,6 +449,9 @@ class VisualizerApi():
                         self.data[request]['channels'][channel_name] = {'values': [], 'times': []}
                     self.data[request]['channels'][channel_name]['values'].extend(channel['ValueList'])
                     self.data[request]['channels'][channel_name]['times'].extend(channel['ScadaReadTimeUnixMsList'])
+            if not self.data[request]['channels']:
+                print(f"No data found.")
+                return {"success": False, "message": "No data found.", "reload": False}
                 
             # Process snapshots
             max_timestamp = max(max(self.data[request]['channels'][channel_name]['times']) for channel_name in self.data[request]['channels'])
@@ -665,6 +668,9 @@ class VisualizerApi():
                             self.data[request][house_alias][channel_name] = {'values': [], 'times': []}
                         self.data[request][house_alias][channel_name]['values'].extend(channel['ValueList'])
                         self.data[request][house_alias][channel_name]['times'].extend(channel['ScadaReadTimeUnixMsList'])
+                if not self.data[request][house_alias]:
+                    print(f"No data found for {house_alias}")
+                    continue
 
                 # Process snapshots
                 max_timestamp = max(max(self.data[request][house_alias][channel_name]['times']) for channel_name in self.data[request][house_alias])
