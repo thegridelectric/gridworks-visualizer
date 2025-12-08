@@ -614,7 +614,7 @@ class VisualizerApi():
                 query_start = time.time()
                 print("Querying journaldb...")
                 stmt = select(MessageSql).filter(
-                    MessageSql.from_alias.like(f'%.scada%'),
+                    MessageSql.from_alias == f"hw1.isone.me.versant.keene.{request.house_alias}.scada",
                     or_(
                         MessageSql.message_type_name == "batched.readings",
                         MessageSql.message_type_name == "report",
