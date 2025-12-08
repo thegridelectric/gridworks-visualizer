@@ -396,29 +396,29 @@ class VisualizerApi():
                 # Use select() instead of session.query()
                 stmt = select(MessageSql).filter(
                     MessageSql.from_alias == f"hw1.isone.me.versant.keene.{request.house_alias}.scada",
-                    MessageSql.message_persisted_ms <= cast(int(request.end_ms), BigInteger),
+                    MessageSql.message_created_ms <= cast(int(request.end_ms), BigInteger),
                     or_(
                         and_(
                             or_(
                                 MessageSql.message_type_name == "batched.readings",
                                 MessageSql.message_type_name == "report",
                             ),
-                            MessageSql.message_persisted_ms >= cast(int(request.start_ms), BigInteger),
+                            MessageSql.message_created_ms >= cast(int(request.start_ms), BigInteger),
                         ),
                         and_(
                             MessageSql.message_type_name == "snapshot.spaceheat",
-                            MessageSql.message_persisted_ms >= cast(int(request.end_ms - 10*60*1000), BigInteger),
+                            MessageSql.message_created_ms >= cast(int(request.end_ms - 10*60*1000), BigInteger),
                         ),
                         and_(
                             MessageSql.message_type_name == "weather.forecast",
-                            MessageSql.message_persisted_ms >= cast(int(request.start_ms - 24 * 3600 * 1000), BigInteger),
+                            MessageSql.message_created_ms >= cast(int(request.start_ms - 24 * 3600 * 1000), BigInteger),
                         )
                     )
-                ).order_by(asc(MessageSql.message_persisted_ms))
+                ).order_by(asc(MessageSql.message_created_ms))
                 
                 # Execute the statement asynchronously
                 result = await session.execute(stmt)
-                all_raw_messages = result.scalars().all()  # Use scalars() to retrieve the data
+                all_raw_messages: List[MessageSql] = result.scalars().all()  # Use scalars() to retrieve the data
                 
                 print(f"\033[91m- Time to query data from journaldb: {round(time.time() - query_start, 1)}s\033[0m")
 
@@ -430,7 +430,7 @@ class VisualizerApi():
             print(f"Processing data...")
             reports: List[MessageSql] = sorted(
                 [x for x in all_raw_messages if x.message_type_name in ['report', 'batched.readings']],
-                key = lambda x: x.message_persisted_ms
+                key = lambda x: x.message_created_ms
                 )
             self.data[request]['channels'] = {}
             for message in reports:
@@ -454,8 +454,8 @@ class VisualizerApi():
             max_timestamp = max(max(self.data[request]['channels'][channel_name]['times']) for channel_name in self.data[request]['channels'])
             snapshots = sorted(
                     [x for x in all_raw_messages if x.message_type_name=='snapshot.spaceheat'
-                    and x.message_persisted_ms >= max_timestamp], 
-                    key = lambda x: x.message_persisted_ms
+                    and x.message_created_ms >= max_timestamp], 
+                    key = lambda x: x.message_created_ms
                     )
             for snapshot in snapshots:
                 for snap in snapshot.payload['LatestReadingList']:
@@ -591,7 +591,7 @@ class VisualizerApi():
             if isinstance(request, DataRequest):
                 weather_forecasts = sorted(
                     [x for x in all_raw_messages if x.message_type_name=='weather.forecast'], 
-                    key = lambda x: x.message_persisted_ms
+                    key = lambda x: x.message_created_ms
                     )
             self.data[request]['weather_forecasts'] = weather_forecasts.copy()
             # print(f"Time to process data: {round(time.time() - process_start, 1)} seconds")
@@ -620,12 +620,12 @@ class VisualizerApi():
                         MessageSql.message_type_name == "report",
                         MessageSql.message_type_name == "snapshot.spaceheat",
                     ),
-                    MessageSql.message_persisted_ms >= request.start_ms,
-                    MessageSql.message_persisted_ms <= request.end_ms + 10*60*1000,
-                ).order_by(asc(MessageSql.message_persisted_ms))
+                    MessageSql.message_created_ms >= request.start_ms,
+                    MessageSql.message_created_ms <= request.end_ms + 10*60*1000,
+                ).order_by(asc(MessageSql.message_created_ms))
 
-                result = await session.execute(stmt)  # Use async execute
-                all_raw_messages = result.scalars().all()  # Get the results
+                result = await session.execute(stmt)
+                all_raw_messages: List[MessageSql] = result.scalars().all()
                 print(f"Time to fetch data: {round(time.time()-query_start,1)}s")
 
             if not all_raw_messages:
@@ -643,7 +643,7 @@ class VisualizerApi():
                     x for x in all_raw_messages 
                     if x.message_type_name in ['report', 'batched.readings']
                     and x.from_alias == house_alias
-                    ], key = lambda x: x.message_persisted_ms
+                    ], key = lambda x: x.message_created_ms
                     )
                 self.data[request][house_alias] = {}
                 for message in reports:
@@ -670,8 +670,8 @@ class VisualizerApi():
                 max_timestamp = max(max(self.data[request][house_alias][channel_name]['times']) for channel_name in self.data[request][house_alias])
                 snapshots = sorted(
                         [x for x in all_raw_messages if x.message_type_name=='snapshot.spaceheat'
-                        and x.message_persisted_ms >= max_timestamp], 
-                        key = lambda x: x.message_persisted_ms
+                        and x.message_created_ms >= max_timestamp], 
+                        key = lambda x: x.message_created_ms
                         )
                 for snapshot in snapshots:
                     for snap in snapshot.payload['LatestReadingList']:
@@ -782,15 +782,15 @@ class VisualizerApi():
                         stmt = select(MessageSql).filter(
                             or_(*house_alias_conditions),
                             MessageSql.message_type_name.in_(request.selected_message_types),
-                            MessageSql.message_persisted_ms >= request.start_ms,
-                            MessageSql.message_persisted_ms <= request.end_ms,
-                        ).order_by(asc(MessageSql.message_persisted_ms))
+                            MessageSql.message_created_ms >= request.start_ms,
+                            MessageSql.message_created_ms <= request.end_ms,
+                        ).order_by(asc(MessageSql.message_created_ms))
                     else:
                         stmt = select(MessageSql).filter(
                             MessageSql.message_type_name.in_(request.selected_message_types),
-                            MessageSql.message_persisted_ms >= request.start_ms,
-                            MessageSql.message_persisted_ms <= request.end_ms,
-                        ).order_by(asc(MessageSql.message_persisted_ms))
+                            MessageSql.message_created_ms >= request.start_ms,
+                            MessageSql.message_created_ms <= request.end_ms,
+                        ).order_by(asc(MessageSql.message_created_ms))
 
                     result = await session.execute(stmt)
                     messages: List[MessageSql] = result.scalars().all()
@@ -1025,9 +1025,9 @@ class VisualizerApi():
                     stmt = select(MessageSql).filter(
                         MessageSql.message_type_name == "flo.params.house0",
                         MessageSql.from_alias == f"hw1.isone.me.versant.keene.{request.house_alias}",
-                        MessageSql.message_persisted_ms >= request.time_ms - 48*3600*1000,
-                        MessageSql.message_persisted_ms <= request.time_ms,
-                    ).order_by(desc(MessageSql.message_persisted_ms))
+                        MessageSql.message_created_ms >= request.time_ms - 48*3600*1000,
+                        MessageSql.message_created_ms <= request.time_ms,
+                    ).order_by(desc(MessageSql.message_created_ms))
                     result = await session.execute(stmt)
                     flo_params_msg: MessageSql = result.scalars().first()
                 
@@ -1036,7 +1036,7 @@ class VisualizerApi():
                     if os.path.exists('result.xlsx'):
                         os.remove('result.xlsx')
                     return
-                print(f"Found FLO run at {self.to_datetime(flo_params_msg.message_persisted_ms)}")
+                print(f"Found FLO run at {self.to_datetime(flo_params_msg.message_created_ms)}")
 
                 print("Running Dijkstra and saving analysis to excel...")
                 flo_params = FloParamsHouse0(**flo_params_msg.payload)
@@ -1078,8 +1078,8 @@ class VisualizerApi():
     #                 stmt = select(MessageSql).filter(
     #                     MessageSql.message_type_name == "flo.params.house0",
     #                     MessageSql.from_alias == f"hw1.isone.me.versant.keene.{request.house_alias}.scada",
-    #                     MessageSql.message_persisted_ms >= request.start_ms,
-    #                     MessageSql.message_persisted_ms <= request.end_ms,
+    #                     MessageSql.message_created_ms >= request.start_ms,
+    #                     MessageSql.message_created_ms <= request.end_ms,
     #                 ).order_by(desc(MessageSql.payload['StartUnixS']))
                     
     #                 result = await session.execute(stmt)
@@ -2555,7 +2555,7 @@ class VisualizerApi():
                 
         oat_forecasts, ws_forecasts = {}, {}
         for message in self.data[request]['weather_forecasts']:
-            forecast_start_time = int((message.message_persisted_ms/1000//3600)*3600)
+            forecast_start_time = int((message.message_created_ms/1000//3600)*3600)
             oat_forecasts[forecast_start_time] = message.payload['OatF']
             ws_forecasts[forecast_start_time] = message.payload['WindSpeedMph']
 
