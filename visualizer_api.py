@@ -325,24 +325,37 @@ class VisualizerApi():
         return False
     
     def check_request(self, request: BaseRequest, aggregate=False):
-        if isinstance(request, Union[DataRequest, CsvRequest]) and not request.confirm_with_user:
-            if (request.end_ms - request.start_ms)/1000/3600/24 > 30:
-                warning_message = f"That's a lot of data (>30 days)! Are you sure you want to proceed?"
-                return {"success": False, "message": warning_message, "reload": False, "confirm_with_user": True}
         if not self.running_locally: 
+            MAX_PLOT_DAYS = 3
+            MAX_CSV_DAYS = 2
+            MAX_MESSAGES_DAYS = 31
+            # Max plot time range
             if isinstance(request, DataRequest) and not isinstance(request, CsvRequest): 
-                if (request.end_ms-request.start_ms)/1000/3600/24 > 30:
-                    warning_message = "Plotting data for this many days (>30 days) is not permitted. Please reduce the range and try again."
+                if (request.end_ms-request.start_ms)/1000/3600/24 > MAX_PLOT_DAYS:
+                    warning_message = f"Plotting data from more than {MAX_PLOT_DAYS} days is not permitted to prevent the visualizer EC2 instance from crashing."
+                    warning_message += "Please reduce the query time range, or consider running locally."
                     return {"success": False, "message": warning_message, "reload": False}
-                if aggregate and (request.end_ms-request.start_ms)/1000/3600/24 > 2:
-                    warning_message = "Plotting data for this many days is not permitted. Please reduce the range and try again."
+                if aggregate and (request.end_ms-request.start_ms)/1000/3600/24 > MAX_PLOT_DAYS:
+                    warning_message = f"Plotting data from more than {MAX_PLOT_DAYS} days is not permitted to prevent the visualizer EC2 instance from crashing."
+                    warning_message += "Please reduce the query time range, or consider running locally."
                     return {"success": False, "message": warning_message, "reload": False}
-            if isinstance(request, CsvRequest) and (request.end_ms-request.start_ms)/1000/3600/24 > 21:
-                warning_message = "Downloading data for this many days is not permitted. Please reduce the range and try again."
+            
+            # Max CSV download time range
+            if isinstance(request, CsvRequest) and (request.end_ms-request.start_ms)/1000/3600/24 > MAX_CSV_DAYS:
+                warning_message = f"Downloading data from more than {MAX_CSV_DAYS} days is not permitted to prevent the visualizer EC2 instance from crashing."
+                warning_message += "Please reduce the query time range, or consider running locally."
                 return {"success": False, "message": warning_message, "reload": False}
-            if isinstance(request, MessagesRequest) and (request.end_ms-request.start_ms)/1000/3600/24 > 31:
-                warning_message = "Downloading messages for this many days is not permitted. Please reduce the range and try again."
+            
+            # Max messages time range
+            if isinstance(request, MessagesRequest) and (request.end_ms-request.start_ms)/1000/3600/24 > MAX_MESSAGES_DAYS:
+                warning_message = f"Downloading messages from more than {MAX_MESSAGES_DAYS} days is not permitted to prevent the visualizer EC2 instance from crashing."
+                warning_message += "Please reduce the query time range, or consider running locally."
                 return {"success": False, "message": warning_message, "reload": False}
+        else:
+            if isinstance(request, Union[DataRequest, CsvRequest]) and not request.confirm_with_user:
+                if (request.end_ms - request.start_ms)/1000/3600/24 > 30:
+                    warning_message = f"That's a lot of data! Are you sure you want to proceed?"
+                    return {"success": False, "message": warning_message, "reload": False, "confirm_with_user": True}
         return None
     
     async def receive_prices(self, request: Prices):
