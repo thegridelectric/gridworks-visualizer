@@ -351,11 +351,11 @@ class VisualizerApi():
                 warning_message = f"Downloading messages from more than {MAX_MESSAGES_DAYS} days is not permitted to prevent the visualizer EC2 instance from crashing."
                 warning_message += "\n\nPlease reduce the query time range, or consider running the visualizer API locally for larger queries."
                 return {"success": False, "message": warning_message, "reload": False}
-        else:
-            if isinstance(request, Union[DataRequest, CsvRequest]) and not request.confirm_with_user:
-                if (request.end_ms - request.start_ms)/1000/3600/24 > 30:
-                    warning_message = f"That's a lot of data! Are you sure you want to proceed?"
-                    return {"success": False, "message": warning_message, "reload": False, "confirm_with_user": True}
+        # else:
+        #     if isinstance(request, Union[DataRequest, CsvRequest]) and not request.confirm_with_user:
+        #         if (request.end_ms - request.start_ms)/1000/3600/24 > 30:
+        #             warning_message = f"That's a lot of data! Are you sure you want to proceed?"
+        #             return {"success": False, "message": warning_message, "reload": False, "confirm_with_user": True}
         return None
     
     async def receive_prices(self, request: Prices):
@@ -882,6 +882,8 @@ class VisualizerApi():
         
     async def get_csv(self, request: CsvRequest):
         try:
+            csv_start = time.time()
+            print(f"\n=== CSV GENERATION STARTED ===")
             async with async_timeout.timeout(self.timeout_seconds):
                 error = await self.get_data(request)
                 if error:
@@ -1018,6 +1020,7 @@ class VisualizerApi():
 
                 csv_content = csv_buffer.getvalue()
                 print(f"CSV file size: {round(len(csv_content)/1024/1024, 1)} MB")
+                print(f"=== TOTAL TIME: {round(time.time() - csv_start, 1)}s ===\n")
                 return StreamingResponse(
                     iter([csv_buffer.getvalue()]),
                     media_type="text/csv",
