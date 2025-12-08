@@ -3104,6 +3104,7 @@ class VisualizerApi():
                     'dd_power_kw': [x.dd_power_kw for x in records],
                     'dd_rswt': [x.dd_rswt for x in records],
                     'dd_delta_t': [x.dd_delta_t for x in records],
+                    'bid': [x.bid for x in records],
                 })
 
             # Build file name
