@@ -2247,7 +2247,7 @@ class VisualizerApi():
             max_store_flow = max([x/100*10 for x in self.data[request]['channels']['store-flow']['values']])
         else:
             max_store_flow = 0
-        max_power = max(max_required_energy, max_usable_energy, max_store_pump_pwr, max_store_flow, 50)
+        max_power = max(max_required_energy, max_usable_energy, max_store_pump_pwr, max_store_flow, 15)
 
         if plotting_temperatures and plotting_power:
             fig.update_layout(yaxis=dict(title='Temperature [F]', range=[min_store_temp-80, max_store_temp+80]))
