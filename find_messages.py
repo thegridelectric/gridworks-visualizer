@@ -7,14 +7,14 @@ from sqlalchemy import create_engine, select, BigInteger
 from config import Settings
 from models import MessageSql
 
-house_alias = "beech"
-message_type = "atn.bid"
-start_ms = pendulum.datetime(2025, 11, 25, 10, 30, tz='America/New_York').timestamp()*1000
-end_ms = pendulum.datetime(2025, 11, 25, 17, 30, tz='America/New_York').timestamp()*1000
+house_alias = "elm"
+message_type = "layout.lite"
+start_ms = pendulum.datetime(2025, 12, 13, 10, 30, tz='America/New_York').timestamp()*1000
+end_ms = pendulum.datetime(2025, 12, 15, 17, 30, tz='America/New_York').timestamp()*1000
 
 stmt = select(MessageSql).filter(
     MessageSql.message_type_name == message_type,
-    MessageSql.from_alias == f"hw1.isone.me.versant.keene.{house_alias}",
+    MessageSql.from_alias == f"hw1.isone.me.versant.keene.{house_alias}.scada",
     MessageSql.message_persisted_ms <= cast(int(end_ms), BigInteger),
     MessageSql.message_persisted_ms >= cast(int(start_ms), BigInteger),
 ).order_by(asc(MessageSql.message_persisted_ms))
@@ -28,10 +28,11 @@ messages = result.scalars().all()
 
 print(f"Found {len(messages)} messages")
 
-for m in [messages[0]]:
-    print(m.from_alias)
+for m in messages:
     print(pendulum.from_timestamp(m.message_persisted_ms/1000, tz='America/New_York'))
-    print(m.payload)
+    
+print("")
+print(messages[0].payload)
 
 # import matplotlib.pyplot as plt
 # times = [pendulum.from_timestamp(m.message_persisted_ms/1000, tz='America/New_York') for m in messages]
