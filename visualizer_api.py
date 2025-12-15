@@ -1611,7 +1611,8 @@ class VisualizerApi():
             'responsive': True
         }, include_plotlyjs='cdn')  # Use CDN instead of embedding Plotly.js
         html_buffer.seek(0)
-        print(f"Heat pump plot done in {round(time.time()-plot_start,1)} seconds")
+        plot_size = len(html_buffer.getvalue())
+        print(f"Heat pump plot ({round(plot_size/1024/1024, 1)} MB) done in {round(time.time()-plot_start,1)} seconds")
         return html_buffer
 
     async def plot_distribution(self, request: DataRequest):
@@ -1737,7 +1738,8 @@ class VisualizerApi():
             'responsive': True
         }, include_plotlyjs='cdn')
         html_buffer.seek(0) 
-        print(f"Distribution plot done in {round(time.time()-plot_start,1)} seconds")
+        plot_size = len(html_buffer.getvalue())
+        print(f"Distribution plot ({round(plot_size/1024/1024, 1)} MB) done in {round(time.time()-plot_start,1)} seconds")
         return html_buffer
     
     async def plot_heatcalls(self, request: DataRequest):
@@ -1877,7 +1879,8 @@ class VisualizerApi():
                 'responsive': True
             }, include_plotlyjs='cdn')
             html_buffer.seek(0)
-            print(f"Heat calls plot done in {round(time.time()-plot_start,1)} seconds")
+            plot_size = len(html_buffer.getvalue())
+            print(f"Heat calls plot ({round(plot_size/1024/1024, 1)} MB) done in {round(time.time()-plot_start,1)} seconds")
             return html_buffer
         
         try:
@@ -2006,7 +2009,8 @@ class VisualizerApi():
             'responsive': True
         }, include_plotlyjs='cdn')
         html_buffer.seek(0)
-        print(f"Zones plot done in {round(time.time()-plot_start,1)} seconds")
+        plot_size = len(html_buffer.getvalue())
+        print(f"Zones plot ({round(plot_size/1024/1024, 1)} MB) done in {round(time.time()-plot_start,1)} seconds")
         return html_buffer
     
     async def plot_buffer(self, request: DataRequest):
@@ -2112,7 +2116,8 @@ class VisualizerApi():
             'responsive': True
         }, include_plotlyjs='cdn')
         html_buffer.seek(0)
-        print(f"Buffer plot done in {round(time.time()-plot_start,1)} seconds")
+        plot_size = len(html_buffer.getvalue())
+        print(f"Buffer plot ({round(plot_size/1024/1024, 1)} MB) done in {round(time.time()-plot_start,1)} seconds")
         return html_buffer
 
     async def plot_storage(self, request: DataRequest):
@@ -2326,7 +2331,8 @@ class VisualizerApi():
             'responsive': True
         }, include_plotlyjs='cdn')
         html_buffer.seek(0)
-        print(f"Storage plot done in {round(time.time()-plot_start,1)} seconds")
+        plot_size = len(html_buffer.getvalue())
+        print(f"Storage plot ({round(plot_size/1024/1024, 1)} MB) done in {round(time.time()-plot_start,1)} seconds")
         return html_buffer
     
     async def plot_top_state(self, request: DataRequest):
@@ -2409,7 +2415,8 @@ class VisualizerApi():
             'responsive': True
         }, include_plotlyjs='cdn')
         html_buffer.seek(0)
-        print(f"Top state plot done in {round(time.time()-plot_start,1)} seconds")
+        plot_size = len(html_buffer.getvalue())
+        print(f"Top state plot ({round(plot_size/1024/1024, 1)} MB) done in {round(time.time()-plot_start,1)} seconds")
         return html_buffer
     
     async def plot_ha_state(self, request: DataRequest):
@@ -2497,7 +2504,8 @@ class VisualizerApi():
             'responsive': True
         }, include_plotlyjs='cdn')
         html_buffer.seek(0)
-        print(f"HA state plot done in {round(time.time()-plot_start,1)} seconds")
+        plot_size = len(html_buffer.getvalue())
+        print(f"HA state plot ({round(plot_size/1024/1024, 1)} MB) done in {round(time.time()-plot_start,1)} seconds")
         return html_buffer
     
     async def plot_aa_state(self, request: DataRequest):
@@ -2584,7 +2592,8 @@ class VisualizerApi():
             'responsive': True
         }, include_plotlyjs='cdn')
         html_buffer.seek(0)
-        print(f"AA state plot done in {round(time.time()-plot_start,1)} seconds")
+        plot_size = len(html_buffer.getvalue())
+        print(f"AA state plot ({round(plot_size/1024/1024, 1)} MB) done in {round(time.time()-plot_start,1)} seconds")
         return html_buffer 
 
     async def plot_weather(self, request: DataRequest):
@@ -2657,7 +2666,8 @@ class VisualizerApi():
             'responsive': True
         }, include_plotlyjs='cdn')
         html_buffer.seek(0)
-        print(f"Weather plot done in {round(time.time()-plot_start,1)} seconds")
+        plot_size = len(html_buffer.getvalue())
+        print(f"Weather plot ({round(plot_size/1024/1024, 1)} MB) done in {round(time.time()-plot_start,1)} seconds")
         return html_buffer
     
     async def plot_prices(self, request: Union[DataRequest, BaseRequest], aggregate=False):
