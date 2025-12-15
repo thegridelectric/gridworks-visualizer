@@ -213,7 +213,7 @@ class VisualizerApi():
             'HpOnStoreCharge', 'StratBoss', 'Initializing', 'Dormant', 'EverythingOff'
             ]
         self.aa_states_order = self.ha_states_order.copy()
-        self.whitewire_threshold_watts = {'beech': 100, 'elm': 0.9, 'default': 20}
+        self.whitewire_threshold_watts = {'beech': 100, 'elm': 1, 'default': 20}
         self.zone_color = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']*3
         self.time_spent_reducing_data = 0
         self.threshold_per_channel = {
