@@ -1885,10 +1885,10 @@ class VisualizerApi():
             loop = asyncio.get_event_loop()
             return await asyncio.wait_for(
                 loop.run_in_executor(None, _plot_heatcalls_sync), 
-                timeout=5
+                timeout=3
             )
         except asyncio.TimeoutError:
-            # Return empty HTML buffer on timeout
+            print(f"Heat calls plot timed out after 3 seconds")
             html_buffer = io.StringIO()
             html_buffer.write('<html><body><p style="font-family: Arial; color: red;">Heat call plot generation timed out</p></body></html>')
             html_buffer.seek(0)
