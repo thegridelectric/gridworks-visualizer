@@ -1250,6 +1250,7 @@ class VisualizerApi():
         try:
             total_start = time.time()
             print(f"\n=== PLOT GENERATION STARTED ===")
+            print(f"{request.house_alias} - {self.to_datetime(request.start_ms)} to {self.to_datetime(request.end_ms)}")
             
             async with async_timeout.timeout(self.timeout_seconds):
                 error = await self.get_data(request)
