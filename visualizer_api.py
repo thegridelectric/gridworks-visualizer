@@ -1741,142 +1741,158 @@ class VisualizerApi():
         return html_buffer
     
     async def plot_heatcalls(self, request: DataRequest):
-        plot_start = time.time()
-        fig = go.Figure()
-        if 'zone-heat-calls' in request.selected_channels:
-            for zone in self.data[request]['channels_by_zone']:
-                if 'whitewire' not in self.data[request]['channels_by_zone'][zone]:
-                    continue
-                whitewire_ch = self.data[request]['channels_by_zone'][zone]['whitewire']
-                zone_number = int(whitewire_ch[4])
-                zone_color = self.zone_color[zone_number-1]
-                # Interpret whitewire readings as active or not based on threshold
-                if request.house_alias in self.whitewire_threshold_watts:
-                    threshold = self.whitewire_threshold_watts[request.house_alias]
-                else:
-                    threshold = self.whitewire_threshold_watts['default']
-                self.data[request]['channels'][whitewire_ch]['values'] = [
-                    int(abs(x)>threshold) for x in self.data[request]['channels'][whitewire_ch]['values']
-                    ]
-                ww_times = self.data[request]['channels'][whitewire_ch]['times']
-                ww_values = self.data[request]['channels'][whitewire_ch]['values']            
-                # Plot heat calls as periods
-                last_was_1 = False
-                heatcall_period_start = None
-                for i in range(len(ww_values)):
-                    if ww_values[i] == 1:
-                        # Start a heat call period
-                        if not last_was_1 or 'show-points' in request.selected_channels and i>0: 
-                            fig.add_trace(
-                                go.Scatter(
-                                    x=[ww_times[i], ww_times[i]],
-                                    y=[zone_number-1, zone_number],
-                                    mode='lines',
-                                    line=dict(color=zone_color, width=2),
-                                    opacity=0.7,
-                                    name=self.data[request]['channels_by_zone'][zone]['whitewire'].replace('-whitewire',''),
-                                    showlegend=False,
-                                    hovertemplate="%{x|%H:%M:%S}<extra></extra>"
-                                )
-                            )
-                        if i >= len(ww_values)-1:
-                            continue
-                        if not heatcall_period_start:
-                            heatcall_period_start = ww_times[i]
-                        if ww_values[i+1] != 1:
-                            # End a heat call period
-                            fig.add_trace(
-                                go.Scatter(
-                                    x=[ww_times[i+1], ww_times[i+1]],
-                                    y=[zone_number-1, zone_number],
-                                    mode='lines',
-                                    line=dict(color=zone_color, width=2),
-                                    opacity=0.7,
-                                    name=self.data[request]['channels_by_zone'][zone]['whitewire'].replace('-whitewire',''),
-                                    showlegend=False,
-                                    hovertemplate="%{x|%H:%M:%S}<extra></extra>"
-                                )
-                            )
-                        if ww_values[i+1] != 1 or i+1==len(ww_values)-1:
-                            # Add shading between heat call period start and end
-                            if heatcall_period_start:
-                                fig.add_shape(
-                                    type='rect',
-                                    x0=heatcall_period_start,
-                                    y0=zone_number - 1,
-                                    x1=ww_times[i+1],
-                                    y1=zone_number,
-                                    line=dict(color=zone_color, width=0),
-                                    fillcolor=zone_color,
-                                    opacity=0.2,
-                                    name=self.data[request]['channels_by_zone'][zone]['whitewire'].replace('-whitewire', ''),
-                                )
-                                heatcall_period_start = None
-                        last_was_1 = True
+        def _plot_heatcalls_sync():
+            """Synchronous version of plot_heatcalls that runs in a thread"""
+            plot_start = time.time()
+            fig = go.Figure()
+            if 'zone-heat-calls' in request.selected_channels:
+                for zone in self.data[request]['channels_by_zone']:
+                    if 'whitewire' not in self.data[request]['channels_by_zone'][zone]:
+                        continue
+                    whitewire_ch = self.data[request]['channels_by_zone'][zone]['whitewire']
+                    zone_number = int(whitewire_ch[4])
+                    zone_color = self.zone_color[zone_number-1]
+                    # Interpret whitewire readings as active or not based on threshold
+                    if request.house_alias in self.whitewire_threshold_watts:
+                        threshold = self.whitewire_threshold_watts[request.house_alias]
                     else:
-                        last_was_1 = False
-                fig.add_trace(
-                    go.Scatter(
-                        x=[None], 
-                        y=[None],
-                        mode='lines',
-                        line=dict(color=zone_color, width=2),
-                        name=self.data[request]['channels_by_zone'][zone]['whitewire'].replace('-whitewire','')
+                        threshold = self.whitewire_threshold_watts['default']
+                    self.data[request]['channels'][whitewire_ch]['values'] = [
+                        int(abs(x)>threshold) for x in self.data[request]['channels'][whitewire_ch]['values']
+                        ]
+                    ww_times = self.data[request]['channels'][whitewire_ch]['times']
+                    ww_values = self.data[request]['channels'][whitewire_ch]['values']            
+                    # Plot heat calls as periods
+                    last_was_1 = False
+                    heatcall_period_start = None
+                    for i in range(len(ww_values)):
+                        if ww_values[i] == 1:
+                            # Start a heat call period
+                            if not last_was_1 or 'show-points' in request.selected_channels and i>0: 
+                                fig.add_trace(
+                                    go.Scatter(
+                                        x=[ww_times[i], ww_times[i]],
+                                        y=[zone_number-1, zone_number],
+                                        mode='lines',
+                                        line=dict(color=zone_color, width=2),
+                                        opacity=0.7,
+                                        name=self.data[request]['channels_by_zone'][zone]['whitewire'].replace('-whitewire',''),
+                                        showlegend=False,
+                                        hovertemplate="%{x|%H:%M:%S}<extra></extra>"
+                                    )
+                                )
+                            if i >= len(ww_values)-1:
+                                continue
+                            if not heatcall_period_start:
+                                heatcall_period_start = ww_times[i]
+                            if ww_values[i+1] != 1:
+                                # End a heat call period
+                                fig.add_trace(
+                                    go.Scatter(
+                                        x=[ww_times[i+1], ww_times[i+1]],
+                                        y=[zone_number-1, zone_number],
+                                        mode='lines',
+                                        line=dict(color=zone_color, width=2),
+                                        opacity=0.7,
+                                        name=self.data[request]['channels_by_zone'][zone]['whitewire'].replace('-whitewire',''),
+                                        showlegend=False,
+                                        hovertemplate="%{x|%H:%M:%S}<extra></extra>"
+                                    )
+                                )
+                            if ww_values[i+1] != 1 or i+1==len(ww_values)-1:
+                                # Add shading between heat call period start and end
+                                if heatcall_period_start:
+                                    fig.add_shape(
+                                        type='rect',
+                                        x0=heatcall_period_start,
+                                        y0=zone_number - 1,
+                                        x1=ww_times[i+1],
+                                        y1=zone_number,
+                                        line=dict(color=zone_color, width=0),
+                                        fillcolor=zone_color,
+                                        opacity=0.2,
+                                        name=self.data[request]['channels_by_zone'][zone]['whitewire'].replace('-whitewire', ''),
+                                    )
+                                    heatcall_period_start = None
+                            last_was_1 = True
+                        else:
+                            last_was_1 = False
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[None], 
+                            y=[None],
+                            mode='lines',
+                            line=dict(color=zone_color, width=2),
+                            name=self.data[request]['channels_by_zone'][zone]['whitewire'].replace('-whitewire','')
+                        )
                     )
-                )
 
-        fig.update_layout(
-            title=dict(text='Heat calls', x=0.5, xanchor='center'),
-            plot_bgcolor='#1b1b1c' if request.darkmode else 'white',
-            paper_bgcolor='#1b1b1c' if request.darkmode else 'white',
-            font_color='#b5b5b5' if request.darkmode else 'rgb(42,63,96)',
-            title_font_color='#b5b5b5' if request.darkmode else 'rgb(42,63,96)',
-            margin=dict(t=30, b=30),
-            xaxis=dict(
-                range=[self.data[request]['min_timestamp'], self.data[request]['max_timestamp']],
-                mirror=True,
-                ticks='outside',
-                showline=True,
-                linecolor='#b5b5b5' if request.darkmode else 'rgb(42,63,96)',
-                showgrid=False,
-                type='date',
-                ),
-            yaxis=dict(
-                range = [-0.5, len(self.data[request]['channels_by_zone'].keys())*1.3],
-                mirror=True,
-                ticks='outside',
-                showline=True,
-                linecolor='#b5b5b5' if request.darkmode else 'rgb(42,63,96)',
-                zeroline=False,
-                showgrid=True, 
-                gridwidth=1, 
-                gridcolor='#424242' if request.darkmode else 'LightGray', 
-                tickvals=list(range(len(self.data[request]['channels_by_zone'].keys())+1)),
-                ),
-            yaxis2=dict(
-                mirror=True,
-                ticks='outside',
-                showline=True,
-                linecolor='#b5b5b5' if request.darkmode else 'rgb(42,63,96)',
-                ),
-            legend=dict(
-                x=0,
-                y=1,
-                xanchor='left',
-                yanchor='top',
-                orientation='h',
-                bgcolor='rgba(0, 0, 0, 0)'
+            fig.update_layout(
+                title=dict(text='Heat calls', x=0.5, xanchor='center'),
+                plot_bgcolor='#1b1b1c' if request.darkmode else 'white',
+                paper_bgcolor='#1b1b1c' if request.darkmode else 'white',
+                font_color='#b5b5b5' if request.darkmode else 'rgb(42,63,96)',
+                title_font_color='#b5b5b5' if request.darkmode else 'rgb(42,63,96)',
+                margin=dict(t=30, b=30),
+                xaxis=dict(
+                    range=[self.data[request]['min_timestamp'], self.data[request]['max_timestamp']],
+                    mirror=True,
+                    ticks='outside',
+                    showline=True,
+                    linecolor='#b5b5b5' if request.darkmode else 'rgb(42,63,96)',
+                    showgrid=False,
+                    type='date',
+                    ),
+                yaxis=dict(
+                    range = [-0.5, len(self.data[request]['channels_by_zone'].keys())*1.3],
+                    mirror=True,
+                    ticks='outside',
+                    showline=True,
+                    linecolor='#b5b5b5' if request.darkmode else 'rgb(42,63,96)',
+                    zeroline=False,
+                    showgrid=True, 
+                    gridwidth=1, 
+                    gridcolor='#424242' if request.darkmode else 'LightGray', 
+                    tickvals=list(range(len(self.data[request]['channels_by_zone'].keys())+1)),
+                    ),
+                yaxis2=dict(
+                    mirror=True,
+                    ticks='outside',
+                    showline=True,
+                    linecolor='#b5b5b5' if request.darkmode else 'rgb(42,63,96)',
+                    ),
+                legend=dict(
+                    x=0,
+                    y=1,
+                    xanchor='left',
+                    yanchor='top',
+                    orientation='h',
+                    bgcolor='rgba(0, 0, 0, 0)'
+                )
             )
-        )
-        html_buffer = io.StringIO()
-        fig.write_html(html_buffer, config={
-            'displayModeBar': False,
-            'staticPlot': False,
-            'responsive': True
-        }, include_plotlyjs='cdn')
-        html_buffer.seek(0)
-        # print(f"Heat calls plot done in {round(time.time()-plot_start,1)} seconds")
-        return html_buffer
+            html_buffer = io.StringIO()
+            fig.write_html(html_buffer, config={
+                'displayModeBar': False,
+                'staticPlot': False,
+                'responsive': True
+            }, include_plotlyjs='cdn')
+            html_buffer.seek(0)
+            print(f"Heat calls plot done in {round(time.time()-plot_start,1)} seconds")
+            return html_buffer
+        
+        try:
+            # Run the CPU-bound work in a thread pool so timeout can interrupt it
+            loop = asyncio.get_event_loop()
+            return await asyncio.wait_for(
+                loop.run_in_executor(None, _plot_heatcalls_sync), 
+                timeout=5
+            )
+        except asyncio.TimeoutError:
+            # Return empty HTML buffer on timeout
+            html_buffer = io.StringIO()
+            html_buffer.write('<html><body><p style="font-family: Arial; color: red;">Heat call plot generation timed out</p></body></html>')
+            html_buffer.seek(0)
+            return html_buffer
     
     async def plot_zones(self, request: DataRequest):
         plot_start = time.time()
