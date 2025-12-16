@@ -80,6 +80,7 @@ class HouseSql(Base):
     representation_status = Column(String, nullable=True)
     scada_ip_address = Column(String, nullable=True)
     scada_git_commit = Column(String, nullable=True)
+    house_parameters = Column(JSON, nullable=True)
 
 def verify_password(plain_password, hashed_password):
     return gbo_pwd_context.verify(plain_password, hashed_password)
