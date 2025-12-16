@@ -190,6 +190,7 @@ class House(BaseModel):
     representation_status: Optional[str] = None
     scada_ip_address: str
     scada_git_commit: str
+    house_parameters: Optional[dict] = None
 
 class AlertReactionRequest(BaseModel):
     house_alias: str
