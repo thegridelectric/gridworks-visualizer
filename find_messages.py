@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine, select, BigInteger
 from config import Settings
 from models import MessageSql
+import matplotlib.pyplot as plt
 
 house_alias = "beech"
 message_type = "report"
@@ -15,8 +16,8 @@ end_ms = pendulum.datetime(2025, 12, 22, 13, 0, tz='America/New_York').timestamp
 stmt = select(MessageSql).filter(
     MessageSql.message_type_name == message_type,
     MessageSql.from_alias == f"hw1.isone.me.versant.keene.{house_alias}.scada",
-    MessageSql.message_persisted_ms <= cast(int(end_ms), BigInteger),
-    MessageSql.message_persisted_ms >= cast(int(start_ms), BigInteger),
+    MessageSql.message_created_ms <= cast(int(end_ms), BigInteger),
+    MessageSql.message_created_ms >= cast(int(start_ms), BigInteger),
 ).order_by(asc(MessageSql.message_persisted_ms))
 
 settings = Settings(_env_file=dotenv.find_dotenv())
@@ -29,7 +30,7 @@ messages = result.scalars().all()
 print(f"Found {len(messages)} messages")
 
 for m in messages:
-    print(pendulum.from_timestamp(m.message_persisted_ms/1000, tz='America/New_York'))
+    print(pendulum.from_timestamp(m.message_created_ms/1000, tz='America/New_York'))
     
 # print("")
 # print(messages[0].payload['Ha1Params'])
