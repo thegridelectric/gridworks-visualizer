@@ -7,10 +7,10 @@ from sqlalchemy import create_engine, select, BigInteger
 from config import Settings
 from models import MessageSql
 
-house_alias = "elm"
-message_type = "layout.lite"
-start_ms = pendulum.datetime(2025, 12, 13, 10, 30, tz='America/New_York').timestamp()*1000
-end_ms = pendulum.datetime(2025, 12, 15, 17, 30, tz='America/New_York').timestamp()*1000
+house_alias = "beech"
+message_type = "report"
+start_ms = pendulum.datetime(2025, 12, 21, 12, 30, tz='America/New_York').timestamp()*1000
+end_ms = pendulum.datetime(2025, 12, 22, 13, 0, tz='America/New_York').timestamp()*1000
 
 stmt = select(MessageSql).filter(
     MessageSql.message_type_name == message_type,
@@ -31,10 +31,19 @@ print(f"Found {len(messages)} messages")
 for m in messages:
     print(pendulum.from_timestamp(m.message_persisted_ms/1000, tz='America/New_York'))
     
-print("")
-print(messages[0].payload)
+# print("")
+# print(messages[0].payload['Ha1Params'])
 
 # import matplotlib.pyplot as plt
 # times = [pendulum.from_timestamp(m.message_persisted_ms/1000, tz='America/New_York') for m in messages]
 # plt.scatter(times, [1]*len(messages))
+# plt.show()
+
+# import pandas as pd
+# import matplotlib.pyplot as plt
+
+# df = pd.read_csv('/Users/thomas/Downloads/beech_30s_2025-12-21-05_00-2025-12-23-05_00.csv', header=1)
+# df['timestamps'] = pd.to_datetime(df['timestamps'])
+# plt.figure(figsize=(11, 4))
+# plt.plot(df['timestamps'], df['hp-lwt'])
 # plt.show()
