@@ -591,7 +591,6 @@ class VisualizerApi():
                                 min_time = first_time
                                 min_relay = x
                     if min_relay is not None:
-                        print(f"Min relay: {min_relay}")
                         for t in relays[min_relay]['times']:
                             state = ha_handle
                             if state not in self.data[request]['ha_states']:
