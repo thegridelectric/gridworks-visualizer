@@ -412,25 +412,25 @@ class VisualizerApi():
                 # Use select() instead of session.query()
                 stmt = select(MessageSql).filter(
                     MessageSql.from_alias == f"hw1.isone.me.versant.keene.{request.house_alias}.scada",
-                    MessageSql.message_persisted_ms <= cast(int(request.end_ms), BigInteger),
+                    MessageSql.message_created_ms <= cast(int(request.end_ms), BigInteger),
                     or_(
                         and_(
                             or_(
                                 MessageSql.message_type_name == "batched.readings",
                                 MessageSql.message_type_name == "report",
                             ),
-                            MessageSql.message_persisted_ms >= cast(int(request.start_ms), BigInteger),
+                            MessageSql.message_created_ms >= cast(int(request.start_ms), BigInteger),
                         ),
                         and_(
                             MessageSql.message_type_name == "snapshot.spaceheat",
-                            MessageSql.message_persisted_ms >= cast(int(request.end_ms - 10*60*1000), BigInteger),
+                            MessageSql.message_created_ms >= cast(int(request.end_ms - 10*60*1000), BigInteger),
                         ),
                         and_(
                             MessageSql.message_type_name == "weather.forecast",
-                            MessageSql.message_persisted_ms >= cast(int(request.start_ms - 24 * 3600 * 1000), BigInteger),
+                            MessageSql.message_created_ms >= cast(int(request.start_ms - 24 * 3600 * 1000), BigInteger),
                         )
                     )
-                ).order_by(asc(MessageSql.message_persisted_ms))
+                ).order_by(asc(MessageSql.message_created_ms))
                 
                 # Execute the statement asynchronously
                 result = await session.execute(stmt)
@@ -446,10 +446,12 @@ class VisualizerApi():
             print(f"Processing data...")
             reports: List[MessageSql] = sorted(
                 [x for x in all_raw_messages if x.message_type_name in ['report', 'batched.readings']],
-                key = lambda x: x.message_persisted_ms
+                key = lambda x: x.message_created_ms
                 )
             self.data[request]['channels'] = {}
             for message in reports:
+                # print(f"\nFound report at {self.to_datetime(message.message_created_ms)}:")
+                # print([x['ChannelName'] for x in message.payload['ChannelReadingList']])
                 for channel in message.payload['ChannelReadingList']:
                     if message.message_type_name == 'report':
                         channel_name = channel['ChannelName']
@@ -473,8 +475,8 @@ class VisualizerApi():
             max_timestamp = max(max(self.data[request]['channels'][channel_name]['times']) for channel_name in self.data[request]['channels'])
             snapshots = sorted(
                     [x for x in all_raw_messages if x.message_type_name=='snapshot.spaceheat'
-                    and x.message_persisted_ms >= max_timestamp], 
-                    key = lambda x: x.message_persisted_ms
+                    and x.message_created_ms >= max_timestamp], 
+                    key = lambda x: x.message_created_ms
                     )
             for snapshot in snapshots:
                 for snap in snapshot.payload['LatestReadingList']:
@@ -570,8 +572,35 @@ class VisualizerApi():
             
             # HomeAlone state
             self.data[request]['ha_states'] = {'all': {'times':[], 'values':[]}}
-            if 'auto.h.n' in relays or 'auto.h' in relays:
-                ha_handle = 'auto.h.n' if 'auto.h.n' in relays else 'auto.h'
+            ha_handles = [h for h in relays.keys() if h in ['auto.h', 'auto.h.n']]
+            for h in [h for h in relays.keys() if 'auto.h.' in h and 'auto.h.n' not in h and 'relay' in h]:
+                additional_state = h.split('.relay')[0].split('.')[-1]
+                if additional_state not in ha_handles:
+                    print(f"Adding {additional_state} state")
+                    ha_handles.append(additional_state)
+            for ha_handle in ha_handles:
+                if ha_handle not in ['auto.h', 'auto.h.n']:
+                    # Find which relay has the minimum first timestamp for this ha_handle
+                    relevant_relays = [x for x in relays if ha_handle in x]
+                    min_time = None
+                    min_relay = None
+                    for x in relevant_relays:
+                        if relays[x]['times']:
+                            first_time = relays[x]['times'][0]
+                            if (min_time is None) or (first_time < min_time):
+                                min_time = first_time
+                                min_relay = x
+                    if min_relay is not None:
+                        print(f"Min relay: {min_relay}")
+                        for t in relays[min_relay]['times']:
+                            state = ha_handle
+                            if state not in self.data[request]['ha_states']:
+                                self.data[request]['ha_states'][state] = {'times':[], 'values':[]}
+                            self.data[request]['ha_states']['all']['times'].append(t)
+                            self.data[request]['ha_states']['all']['values'].append(self.ha_states_order.index('Initializing'))
+                            self.data[request]['ha_states'][state]['times'].append(t)
+                            self.data[request]['ha_states'][state]['values'].append(self.ha_states_order.index('Initializing'))
+                    continue
                 for t, state in zip(relays[ha_handle]['times'], relays[ha_handle]['values']):
                     if state == 'HpOn':
                         state = 'HpOnStoreOff'
@@ -610,7 +639,7 @@ class VisualizerApi():
             if isinstance(request, DataRequest):
                 weather_forecasts = sorted(
                     [x for x in all_raw_messages if x.message_type_name=='weather.forecast'], 
-                    key = lambda x: x.message_persisted_ms
+                    key = lambda x: x.message_created_ms
                     )
             self.data[request]['weather_forecasts'] = weather_forecasts.copy()
             # print(f"Time to process data: {round(time.time() - process_start, 1)} seconds")
@@ -639,9 +668,9 @@ class VisualizerApi():
                         MessageSql.message_type_name == "report",
                         MessageSql.message_type_name == "snapshot.spaceheat",
                     ),
-                    MessageSql.message_persisted_ms >= request.start_ms,
-                    MessageSql.message_persisted_ms <= request.end_ms + 10*60*1000,
-                ).order_by(asc(MessageSql.message_persisted_ms))
+                    MessageSql.message_created_ms >= request.start_ms,
+                    MessageSql.message_created_ms <= request.end_ms + 10*60*1000,
+                ).order_by(asc(MessageSql.message_created_ms))
 
                 result = await session.execute(stmt)
                 all_raw_messages: List[MessageSql] = result.scalars().all()
@@ -662,7 +691,7 @@ class VisualizerApi():
                     x for x in all_raw_messages 
                     if x.message_type_name in ['report', 'batched.readings']
                     and x.from_alias == house_alias
-                    ], key = lambda x: x.message_persisted_ms
+                    ], key = lambda x: x.message_created_ms
                     )
                 self.data[request][house_alias] = {}
                 for message in reports:
@@ -692,8 +721,8 @@ class VisualizerApi():
                 max_timestamp = max(max(self.data[request][house_alias][channel_name]['times']) for channel_name in self.data[request][house_alias])
                 snapshots = sorted(
                         [x for x in all_raw_messages if x.message_type_name=='snapshot.spaceheat'
-                        and x.message_persisted_ms >= max_timestamp], 
-                        key = lambda x: x.message_persisted_ms
+                        and x.message_created_ms >= max_timestamp], 
+                        key = lambda x: x.message_created_ms
                         )
                 for snapshot in snapshots:
                     for snap in snapshot.payload['LatestReadingList']:
@@ -804,15 +833,15 @@ class VisualizerApi():
                         stmt = select(MessageSql).filter(
                             or_(*house_alias_conditions),
                             MessageSql.message_type_name.in_(request.selected_message_types),
-                            MessageSql.message_persisted_ms >= request.start_ms,
-                            MessageSql.message_persisted_ms <= request.end_ms,
-                        ).order_by(asc(MessageSql.message_persisted_ms))
+                            MessageSql.message_created_ms >= request.start_ms,
+                            MessageSql.message_created_ms <= request.end_ms,
+                        ).order_by(asc(MessageSql.message_created_ms))
                     else:
                         stmt = select(MessageSql).filter(
                             MessageSql.message_type_name.in_(request.selected_message_types),
-                            MessageSql.message_persisted_ms >= request.start_ms,
-                            MessageSql.message_persisted_ms <= request.end_ms,
-                        ).order_by(asc(MessageSql.message_persisted_ms))
+                            MessageSql.message_created_ms >= request.start_ms,
+                            MessageSql.message_created_ms <= request.end_ms,
+                        ).order_by(asc(MessageSql.message_created_ms))
 
                     result = await session.execute(stmt)
                     messages: List[MessageSql] = result.scalars().all()
@@ -1050,9 +1079,9 @@ class VisualizerApi():
                     stmt = select(MessageSql).filter(
                         MessageSql.message_type_name == "flo.params.house0",
                         MessageSql.from_alias == f"hw1.isone.me.versant.keene.{request.house_alias}",
-                        MessageSql.message_persisted_ms >= request.time_ms - 48*3600*1000,
-                        MessageSql.message_persisted_ms <= request.time_ms,
-                    ).order_by(desc(MessageSql.message_persisted_ms))
+                        MessageSql.message_created_ms >= request.time_ms - 48*3600*1000,
+                        MessageSql.message_created_ms <= request.time_ms,
+                    ).order_by(desc(MessageSql.message_created_ms))
                     result = await session.execute(stmt)
                     flo_params_msg: MessageSql = result.scalars().first()
                 
@@ -1061,7 +1090,7 @@ class VisualizerApi():
                     if os.path.exists('result.xlsx'):
                         os.remove('result.xlsx')
                     return
-                print(f"Found FLO run at {self.to_datetime(flo_params_msg.message_persisted_ms)}")
+                print(f"Found FLO run at {self.to_datetime(flo_params_msg.message_created_ms)}")
 
                 print("Running Dijkstra and saving analysis to excel...")
                 flo_params = FloParamsHouse0(**flo_params_msg.payload)
@@ -2435,6 +2464,7 @@ class VisualizerApi():
             'StratBoss': '#ee93fa',
             'Dormant': '#4f4f4f',
             'EverythingOff': '#4f4f4f',
+            'Other': '#ff0000'
         }
 
         if self.data[request]['ha_states']!={}:
@@ -2450,13 +2480,17 @@ class VisualizerApi():
                 )
             )
             for state in self.data[request]['ha_states'].keys():
-                if state != 'all' and state in ha_state_color:
+                if state != 'all':
+                    if state not in ha_state_color:
+                        state_color = ha_state_color['Other']
+                    else:
+                        state_color = ha_state_color[state]
                     fig.add_trace(
                         go.Scatter(
                             x=self.data[request]['ha_states'][state]['times'],
                             y=self.data[request]['ha_states'][state]['values'],
                             mode='markers',
-                            marker=dict(color=ha_state_color[state], size=10),
+                            marker=dict(color=state_color, size=10),
                             opacity=0.8,
                             name=state,
                             hovertemplate="%{x|%H:%M:%S}"
@@ -2605,7 +2639,7 @@ class VisualizerApi():
                 
         oat_forecasts, ws_forecasts = {}, {}
         for message in self.data[request]['weather_forecasts']:
-            forecast_start_time = int((message.message_persisted_ms/1000//3600)*3600)
+            forecast_start_time = int((message.message_created_ms/1000//3600)*3600)
             oat_forecasts[forecast_start_time] = message.payload['OatF']
             ws_forecasts[forecast_start_time] = message.payload['WindSpeedMph']
 
