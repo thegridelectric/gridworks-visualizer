@@ -3121,54 +3121,15 @@ class VisualizerApi():
                     'kwh': [round(x,2) for x in total_kwh]
                 })
             else:
-                df = pd.DataFrame({
-                    'hour_start': datetime_timestamps,
-                    'hp_kwh_el': [x.hp_kwh_el for x in records],
-                    'hp_kwh_th': [x.hp_kwh_th for x in records],
-                    'dist_kwh': [x.dist_kwh for x in records],
-                    'store_change_kwh': [x.store_change_kwh for x in records],
-                    'hp_avg_lwt': [x.hp_avg_lwt for x in records],
-                    'hp_avg_ewt': [x.hp_avg_ewt for x in records],
-                    'dist_avg_swt': [x.dist_avg_swt for x in records],
-                    'dist_avg_rwt': [x.dist_avg_rwt for x in records],
-                    'buffer_depth1_start': [x.buffer_depth1_start for x in records],
-                    'buffer_depth2_start': [x.buffer_depth2_start for x in records],
-                    'buffer_depth3_start': [x.buffer_depth3_start for x in records],
-                    'buffer_depth4_start': [x.buffer_depth4_start for x in records],
-                    'tank1_depth1_start': [x.tank1_depth1_start for x in records],
-                    'tank1_depth2_start': [x.tank1_depth2_start for x in records],
-                    'tank1_depth3_start': [x.tank1_depth3_start for x in records],
-                    'tank1_depth4_start': [x.tank1_depth4_start for x in records],
-                    'tank2_depth1_start': [x.tank2_depth1_start for x in records],
-                    'tank2_depth2_start': [x.tank2_depth2_start for x in records],
-                    'tank2_depth3_start': [x.tank2_depth3_start for x in records],
-                    'tank2_depth4_start': [x.tank2_depth4_start for x in records],
-                    'tank3_depth1_start': [x.tank3_depth1_start for x in records],
-                    'tank3_depth2_start': [x.tank3_depth2_start for x in records],
-                    'tank3_depth3_start': [x.tank3_depth3_start for x in records],
-                    'tank3_depth4_start': [x.tank3_depth4_start for x in records],
-                    'relay_3_pulled_fraction': [x.relay_3_pulled_fraction for x in records],
-                    'relay_5_pulled_fraction': [x.relay_5_pulled_fraction for x in records],
-                    'relay_6_pulled_fraction': [x.relay_6_pulled_fraction for x in records],
-                    'relay_9_pulled_fraction': [x.relay_9_pulled_fraction for x in records],
-                    'zone1_heatcall_fraction': [x.zone1_heatcall_fraction for x in records],
-                    'zone2_heatcall_fraction': [x.zone2_heatcall_fraction for x in records],
-                    'zone3_heatcall_fraction': [x.zone3_heatcall_fraction for x in records],
-                    'zone4_heatcall_fraction': [x.zone4_heatcall_fraction for x in records],
-                    'oat_f': [x.oat_f for x in records],
-                    'ws_mph': [x.ws_mph for x in records],
-                    'total_usd_per_mwh': [x.total_usd_per_mwh for x in records],
-                    'running_flo': [x.flo for x in records],
-                    'alpha': [x.alpha for x in records],
-                    'beta': [x.beta for x in records],
-                    'gamma': [x.gamma for x in records],
-                    'intermediate_power_kw': [x.intermediate_power_kw for x in records],
-                    'intermediate_rswt': [x.intermediate_rswt for x in records],
-                    'dd_power_kw': [x.dd_power_kw for x in records],
-                    'dd_rswt': [x.dd_rswt for x in records],
-                    'dd_delta_t': [x.dd_delta_t for x in records],
-                    'bid': [x.bid for x in records],
-                })
+                df = pd.DataFrame([dict(row._mapping) for row in records])
+                df['hour_start'] = pd.to_datetime(df['hour_start_s'] * 1000, unit='ms', utc=True)
+                df['hour_start'] = df['hour_start'].dt.tz_convert('America/New_York').dt.tz_localize(None)
+                df = df.drop(columns=['hour_start_s', 'g_node_alias', 'short_alias'], errors='ignore')
+            # Make the hour_start column the first column
+            if 'hour_start' in df.columns:
+                cols = df.columns.tolist()
+                cols.insert(0, cols.pop(cols.index('hour_start')))
+                df = df[cols]
 
             # Build file name
             start_date = self.to_datetime(request.start_ms)
