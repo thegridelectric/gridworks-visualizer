@@ -289,9 +289,9 @@ class VisualizerApi():
 
         start_time_reduction = time.time()
 
-        if 'buffer-depth' in channel_name and 'micro' not in channel_name and 'adj' not in channel_name:
+        if 'buffer-depth' in channel_name and 'micro' not in channel_name and 'device' not in channel_name:
             channel_name = 'buffer-depths'
-        if 'tank' in channel_name and 'depth' in channel_name and 'micro' not in channel_name and 'adj' not in channel_name:
+        if 'tank' in channel_name and 'depth' in channel_name and 'micro' not in channel_name and 'device' not in channel_name:
             channel_name = 'tank-depths'
         if 'zone' in channel_name:
             channel_name = 'zone'
@@ -935,11 +935,11 @@ class VisualizerApi():
                                     channels_to_export.append(c)
                         elif channel == 'buffer-depths':
                             for c in self.data[request]['channels'].keys():
-                                if 'depth' in c and 'buffer' in c and 'micro' not in c and 'adj' not in c:
+                                if 'depth' in c and 'buffer' in c and 'micro' not in c and 'device' not in c:
                                     channels_to_export.append(c)
                         elif channel == 'storage-depths':
                             for c in self.data[request]['channels'].keys():
-                                if 'depth' in c and 'tank' in c and 'micro' not in c and 'adj' not in c:
+                                if 'depth' in c and 'tank' in c and 'micro' not in c and 'device' not in c:
                                     channels_to_export.append(c)
                         elif channel == 'relays':
                             for c in self.data[request]['channels'].keys():
@@ -2060,7 +2060,7 @@ class VisualizerApi():
 
         min_buffer_temp, max_buffer_temp = 1e5, 0
         if 'buffer-depths' in request.selected_channels:
-            buffer_channels = sorted([key for key in self.data[request]['channels'].keys() if 'buffer-depth' in key and 'micro-v' not in key and 'adj' not in key])
+            buffer_channels = sorted([key for key in self.data[request]['channels'].keys() if 'buffer-depth' in key and 'micro-v' not in key and 'device' not in key])
             for buffer_channel in buffer_channels:
                 # buffer_channel = buffer_channel.split('depth')[0] + 'depth' + buffer_channel.split('depth')[1].split('-')[0]
                 if buffer_channel not in buffer_layer_colors:
@@ -2184,7 +2184,7 @@ class VisualizerApi():
         min_store_temp, max_store_temp = 1e5, 0
         if 'storage-depths' in request.selected_channels:
             plotting_temperatures = True
-            tank_channels: list[str] = sorted([key for key in self.data[request]['channels'].keys() if 'tank' in key and 'micro-v' not in key and 'adj' not in key])
+            tank_channels: list[str] = sorted([key for key in self.data[request]['channels'].keys() if 'tank' in key and 'micro-v' not in key and 'device' not in key])
             for tank_channel in tank_channels:
                 tank_channel = tank_channel.split('depth')[0] + 'depth' + tank_channel.split('depth')[1].split('-')[0]
                 if tank_channel not in storage_layer_colors:
