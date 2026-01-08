@@ -2053,14 +2053,20 @@ class VisualizerApi():
             'buffer-depth1': gradient(3),
             'buffer-depth2': gradient(2),
             'buffer-depth3': gradient(1),
-            'buffer-depth4': gradient(0)
-            }
+            'buffer-depth4': gradient(0),
+            'other': (0.5, 0.5, 0.5, 1)
+        }
         buffer_layer_colors = {key: self.to_hex(value) for key, value in buffer_colors.items()}
 
         min_buffer_temp, max_buffer_temp = 1e5, 0
         if 'buffer-depths' in request.selected_channels:
             buffer_channels = sorted([key for key in self.data[request]['channels'].keys() if 'buffer-depth' in key and 'micro-v' not in key and 'adj' not in key])
             for buffer_channel in buffer_channels:
+                # buffer_channel = buffer_channel.split('depth')[0] + 'depth' + buffer_channel.split('depth')[1].split('-')[0]
+                if buffer_channel not in buffer_layer_colors:
+                    buffer_layer_color = buffer_layer_colors['other']
+                else:
+                    buffer_layer_color = buffer_layer_colors[buffer_channel]
                 min_buffer_temp = min(min_buffer_temp, min([self.to_fahrenheit(x/1000) for x in self.data[request]['channels'][buffer_channel]['values']]))
                 max_buffer_temp = max(max_buffer_temp, max([self.to_fahrenheit(x/1000) for x in self.data[request]['channels'][buffer_channel]['values']]))
                 fig.add_trace(
@@ -2070,7 +2076,7 @@ class VisualizerApi():
                         mode='lines+markers' if 'show-points'in request.selected_channels else 'lines', 
                         opacity=0.7,
                         name=buffer_channel.replace('buffer-',''),
-                        line=dict(color=buffer_layer_colors[buffer_channel], dash='solid', shape='hv'),
+                        line=dict(color=buffer_layer_color, dash='solid', shape='hv'),
                         hovertemplate="%{x|%H:%M:%S} | %{y:.1f}°F<extra></extra>"
                         )
                     )  
@@ -2169,6 +2175,7 @@ class VisualizerApi():
             'tank3-depth2': gradient(2),
             'tank3-depth3': gradient(1),
             'tank3-depth4': gradient(0),
+            'other': (0.5, 0.5, 0.5, 1)
             }
         storage_layer_colors = {key: self.to_hex(value) for key, value in storage_colors.items()}
         
@@ -2177,8 +2184,13 @@ class VisualizerApi():
         min_store_temp, max_store_temp = 1e5, 0
         if 'storage-depths' in request.selected_channels:
             plotting_temperatures = True
-            tank_channels = sorted([key for key in self.data[request]['channels'].keys() if 'tank' in key and 'micro-v' not in key and 'adj' not in key])
+            tank_channels: list[str] = sorted([key for key in self.data[request]['channels'].keys() if 'tank' in key and 'micro-v' not in key and 'adj' not in key])
             for tank_channel in tank_channels:
+                tank_channel = tank_channel.split('depth')[0] + 'depth' + tank_channel.split('depth')[1].split('-')[0]
+                if tank_channel not in storage_layer_colors:
+                    tank_layer_color = storage_layer_colors['other']
+                else:
+                    tank_layer_color = storage_layer_colors[tank_channel]
                 min_store_temp = min(min_store_temp, min([self.to_fahrenheit(x/1000) for x in self.data[request]['channels'][tank_channel]['values']]))
                 max_store_temp = max(max_store_temp, max([self.to_fahrenheit(x/1000) for x in self.data[request]['channels'][tank_channel]['values']]))
                 fig.add_trace(
@@ -2187,7 +2199,7 @@ class VisualizerApi():
                         y=[self.to_fahrenheit(x/1000) for x in self.data[request]['channels'][tank_channel]['values']], 
                         mode='lines+markers' if 'show-points'in request.selected_channels else 'lines', opacity=0.7,
                         name=tank_channel.replace('storage-',''),
-                        line=dict(color=storage_layer_colors[tank_channel], dash='solid', shape='hv'),
+                        line=dict(color=tank_layer_color, dash='solid', shape='hv'),
                         hovertemplate="%{x|%H:%M:%S} | %{y:.1f}°F"
                         )
                     )
