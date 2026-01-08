@@ -2067,12 +2067,27 @@ class VisualizerApi():
                     buffer_layer_color = buffer_layer_colors['other']
                 else:
                     buffer_layer_color = buffer_layer_colors[buffer_channel]
-                min_buffer_temp = min(min_buffer_temp, min([x/100 for x in self.data[request]['channels'][buffer_channel]['values']]))
-                max_buffer_temp = max(max_buffer_temp, max([x/100 for x in self.data[request]['channels'][buffer_channel]['values']]))
-                fig.add_trace(
+                if 'beech' in request.house_alias:
+                    min_buffer_temp = min(min_buffer_temp, min([x/100 for x in self.data[request]['channels'][buffer_channel]['values']]))
+                    max_buffer_temp = max(max_buffer_temp, max([x/100 for x in self.data[request]['channels'][buffer_channel]['values']]))
+                    fig.add_trace(
                     go.Scatter(
                         x=self.data[request]['channels'][buffer_channel]['times'], 
                         y=[x/100 for x in self.data[request]['channels'][buffer_channel]['values']], 
+                        mode='lines+markers' if 'show-points'in request.selected_channels else 'lines', 
+                        opacity=0.7,
+                        name=buffer_channel.replace('buffer-',''),
+                        line=dict(color=buffer_layer_color, dash='solid', shape='hv'),
+                        hovertemplate="%{x|%H:%M:%S} | %{y:.1f}°F<extra></extra>"
+                        )
+                    )  
+                else:
+                    min_buffer_temp = min(min_buffer_temp, min([self.to_fahrenheit(x/1000) for x in self.data[request]['channels'][buffer_channel]['values']]))
+                    max_buffer_temp = max(max_buffer_temp, max([self.to_fahrenheit(x/1000) for x in self.data[request]['channels'][buffer_channel]['values']]))
+                    fig.add_trace(
+                    go.Scatter(
+                        x=self.data[request]['channels'][buffer_channel]['times'], 
+                        y=[self.to_fahrenheit(x/1000) for x in self.data[request]['channels'][buffer_channel]['values']], 
                         mode='lines+markers' if 'show-points'in request.selected_channels else 'lines', 
                         opacity=0.7,
                         name=buffer_channel.replace('buffer-',''),
