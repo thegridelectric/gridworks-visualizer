@@ -2067,7 +2067,7 @@ class VisualizerApi():
                     buffer_layer_color = buffer_layer_colors['other']
                 else:
                     buffer_layer_color = buffer_layer_colors[buffer_channel]
-                if request.house_alias in ['beech', 'oak']:
+                if request.end_ms >= pendulum.datetime(2025,1,9, tz=self.timezone_str).timestamp()*1000:
                     min_buffer_temp = min(min_buffer_temp, min([x/100 for x in self.data[request]['channels'][buffer_channel]['values']]))
                     max_buffer_temp = max(max_buffer_temp, max([x/100 for x in self.data[request]['channels'][buffer_channel]['values']]))
                     fig.add_trace(
@@ -2206,7 +2206,7 @@ class VisualizerApi():
                     tank_layer_color = storage_layer_colors['other']
                 else:
                     tank_layer_color = storage_layer_colors[tank_channel]
-                if request.house_alias in ['beech', 'oak']:
+                if request.end_ms >= pendulum.datetime(2025,1,9, tz=self.timezone_str).timestamp()*1000:
                     min_store_temp = min(min_store_temp, min([x/100 for x in self.data[request]['channels'][tank_channel]['values']]))
                     max_store_temp = max(max_store_temp, max([x/100 for x in self.data[request]['channels'][tank_channel]['values']]))
                     fig.add_trace(
