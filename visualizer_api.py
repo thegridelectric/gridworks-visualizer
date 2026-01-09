@@ -2067,7 +2067,7 @@ class VisualizerApi():
                     buffer_layer_color = buffer_layer_colors['other']
                 else:
                     buffer_layer_color = buffer_layer_colors[buffer_channel]
-                if 'beech' in request.house_alias:
+                if request.house_alias in ['beech', 'oak']:
                     min_buffer_temp = min(min_buffer_temp, min([x/100 for x in self.data[request]['channels'][buffer_channel]['values']]))
                     max_buffer_temp = max(max_buffer_temp, max([x/100 for x in self.data[request]['channels'][buffer_channel]['values']]))
                     fig.add_trace(
@@ -2206,18 +2206,32 @@ class VisualizerApi():
                     tank_layer_color = storage_layer_colors['other']
                 else:
                     tank_layer_color = storage_layer_colors[tank_channel]
-                min_store_temp = min(min_store_temp, min([self.to_fahrenheit(x/1000) for x in self.data[request]['channels'][tank_channel]['values']]))
-                max_store_temp = max(max_store_temp, max([self.to_fahrenheit(x/1000) for x in self.data[request]['channels'][tank_channel]['values']]))
-                fig.add_trace(
+                if request.house_alias in ['beech', 'oak']:
+                    min_store_temp = min(min_store_temp, min([x/100 for x in self.data[request]['channels'][tank_channel]['values']]))
+                    max_store_temp = max(max_store_temp, max([x/100 for x in self.data[request]['channels'][tank_channel]['values']]))
+                    fig.add_trace(
                     go.Scatter(
                         x=self.data[request]['channels'][tank_channel]['times'], 
-                        y=[self.to_fahrenheit(x/1000) for x in self.data[request]['channels'][tank_channel]['values']], 
+                        y=[x/100 for x in self.data[request]['channels'][tank_channel]['values']], 
                         mode='lines+markers' if 'show-points'in request.selected_channels else 'lines', opacity=0.7,
                         name=tank_channel.replace('storage-',''),
                         line=dict(color=tank_layer_color, dash='solid', shape='hv'),
                         hovertemplate="%{x|%H:%M:%S} | %{y:.1f}°F"
                         )
                     )
+                else:
+                    min_store_temp = min(min_store_temp, min([self.to_fahrenheit(x/1000) for x in self.data[request]['channels'][tank_channel]['values']]))
+                    max_store_temp = max(max_store_temp, max([self.to_fahrenheit(x/1000) for x in self.data[request]['channels'][tank_channel]['values']]))
+                    fig.add_trace(
+                        go.Scatter(
+                            x=self.data[request]['channels'][tank_channel]['times'], 
+                            y=[self.to_fahrenheit(x/1000) for x in self.data[request]['channels'][tank_channel]['values']], 
+                            mode='lines+markers' if 'show-points'in request.selected_channels else 'lines', opacity=0.7,
+                            name=tank_channel.replace('storage-',''),
+                            line=dict(color=tank_layer_color, dash='solid', shape='hv'),
+                            hovertemplate="%{x|%H:%M:%S} | %{y:.1f}°F"
+                            )
+                        )
         if 'store-hot-pipe' in request.selected_channels and 'store-hot-pipe' in self.data[request]['channels']:
             plotting_temperatures = True
             min_store_temp = min(min_store_temp, min([self.to_fahrenheit(x/1000) for x in self.data[request]['channels']['store-hot-pipe']['values']]))
