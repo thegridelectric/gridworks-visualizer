@@ -18,3 +18,4 @@ matplotlib
 plotly
 passlib[bcrypt]
 pydantic-settings
+reportlab
