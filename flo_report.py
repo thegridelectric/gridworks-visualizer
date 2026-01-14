@@ -47,6 +47,9 @@ for m in messages:
 
 print(f"Found {len(messages)} messages and {len(flo_params_messages)} of them at minute 57")
 
+session.close()
+engine.dispose()
+
 # ---------------------------------------------------
 # Part 2: Generate plots in plots/ directory
 # ---------------------------------------------------
