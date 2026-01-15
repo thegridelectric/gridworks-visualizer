@@ -16,10 +16,35 @@ from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
 from PIL import Image
 
-house_alias = "oak"
+print("\nWelcome to the FLO report generator!\n")
+house_alias = input("Enter house alias: ")
+if not house_alias:
+    print("House alias is required")
+    exit()
+
 message_type = "flo.params.house0"
-start_ms = pendulum.datetime(2026, 1, 13, 20, tz='America/New_York').timestamp()*1000
-end_ms = pendulum.datetime(2026, 1, 14, 16, tz='America/New_York').timestamp()*1000
+now = pendulum.now(tz='America/New_York')
+yesterday_8pm = now.subtract(days=1).set(hour=20, minute=0, second=0, microsecond=0)
+
+start_input = input("Enter start year, month, day, hour (default: yesterday 8pm): ")
+if start_input and len(start_input.split(',')) == 4:
+    START_YEAR, START_MONTH, START_DAY, START_HOUR = start_input.split(',')
+    START_YEAR, START_MONTH, START_DAY, START_HOUR = int(START_YEAR), int(START_MONTH), int(START_DAY), int(START_HOUR)
+else:
+    START_YEAR, START_MONTH, START_DAY, START_HOUR = yesterday_8pm.year, yesterday_8pm.month, yesterday_8pm.day, yesterday_8pm.hour
+
+end_input = input("Enter end year, month, day, hour (default: now): ")
+if end_input and len(end_input.split(',')) == 4:
+    END_YEAR, END_MONTH, END_DAY, END_HOUR = end_input.split(',')
+    END_YEAR, END_MONTH, END_DAY, END_HOUR = int(END_YEAR), int(END_MONTH), int(END_DAY), int(END_HOUR)
+else:
+    END_YEAR, END_MONTH, END_DAY, END_HOUR = now.year, now.month, now.day, now.hour
+
+start_time = pendulum.datetime(START_YEAR, START_MONTH, START_DAY, START_HOUR, tz='America/New_York')
+end_time = pendulum.datetime(END_YEAR, END_MONTH, END_DAY, END_HOUR, tz='America/New_York')
+start_ms = start_time.timestamp()*1000
+end_ms = end_time.timestamp()*1000
+print(f"Generating report for {house_alias} from {start_time} to {end_time}\n")
 
 # ---------------------------------------------------
 # Part 1: Find FLO params messages
@@ -81,11 +106,11 @@ for i, flo_params_msg in enumerate(flo_params_messages):
 # Part 3: Generate PDF report
 # ---------------------------------------------------
 
-if os.path.exists('flo_report.pdf'):
-    os.remove('flo_report.pdf')
+if os.path.exists(f'flo_report_{house_alias}.pdf'):
+    os.remove(f'flo_report_{house_alias}.pdf')
 
 print("Generating PDF report...")
-pdf_path = 'flo_report.pdf'
+pdf_path = f'flo_report_{house_alias}.pdf'
 c = canvas.Canvas(pdf_path, pagesize=A4)
 page_width, page_height = A4
 
