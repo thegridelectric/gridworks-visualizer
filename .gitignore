@@ -11,6 +11,7 @@ __pycache__/
 
 plots/
 flo_report.pdf
+flo_report_*.pdf
 
 scratch*
 # C extensions
