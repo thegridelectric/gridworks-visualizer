@@ -550,7 +550,6 @@ class VisualizerApi():
                 for state in message.payload['StateList']:
                     state_machine_handle = str(state['MachineHandle']).replace('auto.h', 'auto.lc').replace('a.aa', 'ltn.la')
                     if state_machine_handle not in relays:
-                        print(f"\nAdding {state_machine_handle}")
                         relays[state_machine_handle] = {'times': [], 'values': []}
                     relays[state_machine_handle]['times'].extend([self.to_datetime(x) for x in state['UnixMsList']])
                     relays[state_machine_handle]['values'].extend(state['StateList'])
