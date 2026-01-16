@@ -209,12 +209,12 @@ class VisualizerApi():
         self.admin_user_password = self.settings.visualizer_api_password.get_secret_value()
         self.timezone_str = 'America/New_York'
         self.timeout_seconds = 5*60
-        self.top_states_order = ['HomeAlone', 'Atn', 'Dormant']
-        self.ha_states_order = [
+        self.top_states_order = ['LocalControl', 'LeafTransactiveNode', 'Dormant']
+        self.lc_states_order = [
             'HpOffStoreDischarge', 'HpOffStoreOff', 'HpOnStoreOff', 
             'HpOnStoreCharge', 'StratBoss', 'Initializing', 'Dormant', 'EverythingOff'
             ]
-        self.aa_states_order = self.ha_states_order.copy()
+        self.la_states_order = self.lc_states_order.copy()
         self.whitewire_threshold_watts = {'beech': 100, 'elm': 1, 'default': 20}
         self.zone_color = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']*3
         self.time_spent_reducing_data = 0
@@ -548,15 +548,21 @@ class VisualizerApi():
                 if 'StateList' not in message.payload:
                     continue
                 for state in message.payload['StateList']:
-                    if state['MachineHandle'] not in relays:
-                        relays[state['MachineHandle']] = {'times': [], 'values': []}
-                    relays[state['MachineHandle']]['times'].extend([self.to_datetime(x) for x in state['UnixMsList']])
-                    relays[state['MachineHandle']]['values'].extend(state['StateList'])
+                    state_machine_handle = str(state['MachineHandle']).replace('auto.h', 'auto.lc').replace('a.aa', 'ltn.la')
+                    if state_machine_handle not in relays:
+                        print(f"\nAdding {state_machine_handle}")
+                        relays[state_machine_handle] = {'times': [], 'values': []}
+                    relays[state_machine_handle]['times'].extend([self.to_datetime(x) for x in state['UnixMsList']])
+                    relays[state_machine_handle]['values'].extend(state['StateList'])
 
             # Top state
             self.data[request]['top_states'] = {'all': {'times':[], 'values':[]}}
             if 'auto' in relays:
                 for t, state in zip(relays['auto']['times'], relays['auto']['values']):
+                    if state == 'HomeAlone':
+                        state = 'LocalControl'
+                    if state == 'Atn':
+                        state = 'LeafTransactiveNode'
                     if state not in self.top_states_order:
                         print(f"Warning: {state} is not a known top state")
                         continue
@@ -570,16 +576,16 @@ class VisualizerApi():
                 self.data[request]['top_states']['Admin'] = self.data[request]['top_states']['Dormant']
                 del self.data[request]['top_states']['Dormant']
             
-            # HomeAlone state
-            self.data[request]['ha_states'] = {'all': {'times':[], 'values':[]}}
-            ha_handles = [h for h in relays.keys() if h in ['auto.h', 'auto.h.n']]
-            for h in [h for h in relays.keys() if 'auto.h.' in h and 'auto.h.n' not in h and 'relay' in h]:
+            # LocalControl state
+            self.data[request]['lc_states'] = {'all': {'times':[], 'values':[]}}
+            ha_handles = [h for h in relays.keys() if h in ['auto.lc', 'auto.lc.n']]
+            for h in [h for h in relays.keys() if 'auto.lc.' in h and 'auto.lc.n' not in h and 'relay' in h]:
                 additional_state = h.split('.relay')[0].split('.')[-1]
                 if additional_state not in ha_handles:
                     print(f"Adding {additional_state} state")
                     ha_handles.append(additional_state)
             for ha_handle in ha_handles:
-                if ha_handle not in ['auto.h', 'auto.h.n']:
+                if ha_handle not in ['auto.lc', 'auto.lc.n']:
                     # Find which relay has the minimum first timestamp for this ha_handle
                     relevant_relays = [x for x in relays if ha_handle in x]
                     min_time = None
@@ -593,45 +599,45 @@ class VisualizerApi():
                     if min_relay is not None:
                         for t in relays[min_relay]['times']:
                             state = ha_handle
-                            if state not in self.data[request]['ha_states']:
-                                self.data[request]['ha_states'][state] = {'times':[], 'values':[]}
-                            self.data[request]['ha_states']['all']['times'].append(t)
-                            self.data[request]['ha_states']['all']['values'].append(self.ha_states_order.index('Initializing'))
-                            self.data[request]['ha_states'][state]['times'].append(t)
-                            self.data[request]['ha_states'][state]['values'].append(self.ha_states_order.index('Initializing'))
+                            if state not in self.data[request]['lc_states']:
+                                self.data[request]['lc_states'][state] = {'times':[], 'values':[]}
+                            self.data[request]['lc_states']['all']['times'].append(t)
+                            self.data[request]['lc_states']['all']['values'].append(self.lc_states_order.index('Initializing'))
+                            self.data[request]['lc_states'][state]['times'].append(t)
+                            self.data[request]['lc_states'][state]['values'].append(self.lc_states_order.index('Initializing'))
                     continue
                 for t, state in zip(relays[ha_handle]['times'], relays[ha_handle]['values']):
                     if state == 'HpOn':
                         state = 'HpOnStoreOff'
                     if state == 'HpOff':
                         state = 'HpOffStoreOff'
-                    if state not in self.ha_states_order:
+                    if state not in self.lc_states_order:
                         print(f"Warning: {state} is not a known HA state")
                         continue
-                    if state not in self.data[request]['ha_states']:
-                        self.data[request]['ha_states'][state] = {'times':[], 'values':[]}
-                    self.data[request]['ha_states']['all']['times'].append(t)
-                    self.data[request]['ha_states']['all']['values'].append(self.ha_states_order.index(state))
-                    self.data[request]['ha_states'][state]['times'].append(t)
-                    self.data[request]['ha_states'][state]['values'].append(self.ha_states_order.index(state))
+                    if state not in self.data[request]['lc_states']:
+                        self.data[request]['lc_states'][state] = {'times':[], 'values':[]}
+                    self.data[request]['lc_states']['all']['times'].append(t)
+                    self.data[request]['lc_states']['all']['values'].append(self.lc_states_order.index(state))
+                    self.data[request]['lc_states'][state]['times'].append(t)
+                    self.data[request]['lc_states'][state]['values'].append(self.lc_states_order.index(state))
 
-            # AtomicAlly state
-            self.data[request]['aa_states'] = {'all': {'times':[], 'values':[]}}
-            if 'a.aa' in relays:
-                for t, state in zip(relays['a.aa']['times'], relays['a.aa']['values']):
+            # LeafAlly state
+            self.data[request]['la_states'] = {'all': {'times':[], 'values':[]}}
+            if 'ltn.la' in relays:
+                for t, state in zip(relays['ltn.la']['times'], relays['ltn.la']['values']):
                     if state == 'HpOn':
                         state = 'HpOnStoreOff'
                     if state == 'HpOff':
                         state = 'HpOffStoreOff'
-                    if state not in self.aa_states_order:
-                        print(f"Warning: {state} is not a known AA state")
+                    if state not in self.la_states_order:
+                        print(f"Warning: {state} is not a known LA state")
                         continue
-                    if state not in self.data[request]['aa_states']:
-                        self.data[request]['aa_states'][state] = {'times':[], 'values':[]}
-                    self.data[request]['aa_states']['all']['times'].append(t)
-                    self.data[request]['aa_states']['all']['values'].append(self.aa_states_order.index(state))
-                    self.data[request]['aa_states'][state]['times'].append(t)
-                    self.data[request]['aa_states'][state]['values'].append(self.aa_states_order.index(state))
+                    if state not in self.data[request]['la_states']:
+                        self.data[request]['la_states'][state] = {'times':[], 'values':[]}
+                    self.data[request]['la_states']['all']['times'].append(t)
+                    self.data[request]['la_states']['all']['values'].append(self.la_states_order.index(state))
+                    self.data[request]['la_states'][state]['times'].append(t)
+                    self.data[request]['la_states'][state]['values'].append(self.la_states_order.index(state))
 
             # Weather forecasts
             weather_forecasts: List[MessageSql] = []
@@ -2412,8 +2418,8 @@ class VisualizerApi():
         fig = go.Figure()
 
         top_state_color = {
-            'HomeAlone': '#EF553B',
-            'Atn': '#00CC96',
+            'LocalControl': '#EF553B',
+            'LeafTransactiveNode': '#00CC96',
             'Admin': '#636EFA'
         }
         
@@ -2507,11 +2513,11 @@ class VisualizerApi():
             'Other': '#ff0000'
         }
 
-        if self.data[request]['ha_states']!={}:
+        if self.data[request]['lc_states']!={}:
             fig.add_trace(
                 go.Scatter(
-                    x=self.data[request]['ha_states']['all']['times'],
-                    y=self.data[request]['ha_states']['all']['values'],
+                    x=self.data[request]['lc_states']['all']['times'],
+                    y=self.data[request]['lc_states']['all']['values'],
                     mode='lines',
                     line=dict(color='#f0f0f0' if request.darkmode else '#5e5e5e', width=2),
                     opacity=0.3,
@@ -2519,7 +2525,7 @@ class VisualizerApi():
                     line_shape='hv'
                 )
             )
-            for state in self.data[request]['ha_states'].keys():
+            for state in self.data[request]['lc_states'].keys():
                 if state != 'all':
                     if state not in ha_state_color:
                         state_color = ha_state_color['Other']
@@ -2527,8 +2533,8 @@ class VisualizerApi():
                         state_color = ha_state_color[state]
                     fig.add_trace(
                         go.Scatter(
-                            x=self.data[request]['ha_states'][state]['times'],
-                            y=self.data[request]['ha_states'][state]['values'],
+                            x=self.data[request]['lc_states'][state]['times'],
+                            y=self.data[request]['lc_states'][state]['values'],
                             mode='markers',
                             marker=dict(color=state_color, size=10),
                             opacity=0.8,
@@ -2538,7 +2544,7 @@ class VisualizerApi():
                     )
 
         fig.update_layout(
-            title=dict(text='HomeAlone State', x=0.5, xanchor='center'),
+            title=dict(text='LocalControl State', x=0.5, xanchor='center'),
             plot_bgcolor='#1b1b1c' if request.darkmode else 'white',
             paper_bgcolor='#1b1b1c' if request.darkmode else 'white',
             font_color='#b5b5b5' if request.darkmode else 'rgb(42,63,96)',
@@ -2599,11 +2605,11 @@ class VisualizerApi():
             'Dormant': '#4f4f4f'
         }
 
-        if self.data[request]['aa_states']!={}:
+        if self.data[request]['la_states']!={}:
             fig.add_trace(
                 go.Scatter(
-                    x=self.data[request]['aa_states']['all']['times'],
-                    y=self.data[request]['aa_states']['all']['values'],
+                    x=self.data[request]['la_states']['all']['times'],
+                    y=self.data[request]['la_states']['all']['values'],
                     mode='lines',
                     line=dict(color='#f0f0f0' if request.darkmode else '#5e5e5e', width=2),
                     opacity=0.3,
@@ -2611,12 +2617,12 @@ class VisualizerApi():
                     line_shape='hv'
                 )
             )
-            for state in self.data[request]['aa_states'].keys():
+            for state in self.data[request]['la_states'].keys():
                 if state != 'all' and state in aa_state_color:
                     fig.add_trace(
                         go.Scatter(
-                            x=self.data[request]['aa_states'][state]['times'],
-                            y=self.data[request]['aa_states'][state]['values'],
+                            x=self.data[request]['la_states'][state]['times'],
+                            y=self.data[request]['la_states'][state]['values'],
                             mode='markers',
                             marker=dict(color=aa_state_color[state], size=10),
                             opacity=0.8,
@@ -2626,7 +2632,7 @@ class VisualizerApi():
                     )
 
         fig.update_layout(
-            title=dict(text='AtomicAlly State', x=0.5, xanchor='center'),
+            title=dict(text='LeafAlly State', x=0.5, xanchor='center'),
             plot_bgcolor='#1b1b1c' if request.darkmode else 'white',
             paper_bgcolor='#1b1b1c' if request.darkmode else 'white',
             font_color='#b5b5b5' if request.darkmode else 'rgb(42,63,96)',
