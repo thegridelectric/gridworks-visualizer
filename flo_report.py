@@ -93,6 +93,7 @@ for i, flo_params_msg in enumerate(flo_params_messages):
         final_node = DNodeVisualizer(g.initial_node, 'final')
         final_node.plot(save_as=f'plots/flo{i}_final.png')
     v.plot(show=False,save_as=f'plots/flo{i+1}_graph.png')
+    v.plot_pq_pairs(save_as=f'plots/flo{i+1}_pq_pairs.png')
     
     init_node = DNodeVisualizer(g.initial_node, 'initial')
     expected_node = DNodeVisualizer(g.initial_node.next_node, 'expected')
@@ -106,11 +107,11 @@ for i, flo_params_msg in enumerate(flo_params_messages):
 # Part 3: Generate PDF report
 # ---------------------------------------------------
 
-if os.path.exists(f'flo_report_{house_alias}.pdf'):
-    os.remove(f'flo_report_{house_alias}.pdf')
+pdf_path = os.path.expanduser(f'~/Desktop/flo_report_{house_alias}.pdf')
+if os.path.exists(pdf_path):
+    os.remove(pdf_path)
 
 print("Generating PDF report...")
-pdf_path = f'flo_report_{house_alias}.pdf'
 c = canvas.Canvas(pdf_path, pagesize=A4)
 page_width, page_height = A4
 
@@ -220,6 +221,30 @@ for page_start in range(0, num_graphs, graphs_per_page):
                        width=plot_display_width, height=plot_display_height)
             
             node_x += node_plot_width + node_plot_gap
+        
+        # Draw pq_pairs plot on the right, positioned above the node plots
+        pq_pairs_path = f'plots/flo{graph_num}_pq_pairs.png'
+        if os.path.exists(pq_pairs_path):
+            pq_img = Image.open(pq_pairs_path)
+            pq_img_width, pq_img_height = pq_img.size
+            pq_aspect_ratio = pq_img_height / pq_img_width
+            
+            # Use full right width for the plot
+            pq_plot_width = right_width
+            pq_plot_height = pq_plot_width * pq_aspect_ratio
+            
+            # Cap the height to avoid overlapping with row above
+            max_pq_height = 1.4 * inch
+            if pq_plot_height > max_pq_height:
+                pq_plot_height = max_pq_height
+                pq_plot_width = pq_plot_height / pq_aspect_ratio
+            
+            # Position above the node plots row, centered horizontally in right area
+            pq_x = right_x + (right_width - pq_plot_width) / 2
+            pq_y = node_y + node_plot_height + 0.05 * inch
+            
+            c.drawImage(pq_pairs_path, pq_x, pq_y,
+                       width=pq_plot_width, height=pq_plot_height)
 
 c.save()
 print(f"PDF report saved as {pdf_path}")
