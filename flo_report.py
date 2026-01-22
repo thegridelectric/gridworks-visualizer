@@ -7,7 +7,9 @@ from sqlalchemy import create_engine, select, BigInteger
 from config import Settings
 from models import MessageSql
 from gridflo.asl.types import FloParamsHouse0
+from gridflo.dijkstra_types import DNode
 from gridflo import Flo, DGraphVisualizer, DNodeVisualizer
+from gridflo.asl.types import WinterOakSupergraphParams
 import gc
 import os
 import shutil
@@ -94,9 +96,30 @@ for i, flo_params_msg in enumerate(flo_params_messages):
         final_node.plot(save_as=f'plots/flo{i}_final.png')
     v.plot(show=False,save_as=f'plots/flo{i+1}_graph.png')
     v.plot_pq_pairs(save_as=f'plots/flo{i+1}_pq_pairs.png')
+
+    winter_oak_supergraph_params = WinterOakSupergraphParams(
+        num_layers=flo_params.num_layers,
+        storage_volume_gallons=flo_params.storage_volume_gallons,
+        hp_max_elec_kw=flo_params.hp_max_elec_kw,
+        cop_intercept=flo_params.cop_intercept,
+        cop_oat_coeff=flo_params.cop_oat_coeff,
+        cop_min=flo_params.cop_min,
+        cop_min_oat_f=flo_params.cop_min_oat_f,
+        constant_delta_t=flo_params.constant_delta_t,
+    )
     
+    true_initial_node = DNode(
+        top_temp=flo_params.initial_top_temp_f,
+        middle_temp=flo_params.initial_middle_temp_f,
+        bottom_temp=flo_params.initial_bottom_temp_f,
+        thermocline1=flo_params.initial_thermocline_1,
+        thermocline2=flo_params.initial_thermocline_2,
+        parameters=winter_oak_supergraph_params,
+    )
+    true_init_node = DNodeVisualizer(true_initial_node, 'true_initial')
     init_node = DNodeVisualizer(g.initial_node, 'initial')
     expected_node = DNodeVisualizer(g.initial_node.next_node, 'expected')
+    true_init_node.plot(save_as=f'plots/flo{i+1}_true_initial.png')
     init_node.plot(save_as=f'plots/flo{i+1}_initial.png')
     expected_node.plot(save_as=f'plots/flo{i+1}_expected.png')
 
@@ -124,7 +147,7 @@ left_margin = margin
 left_width = 5.5 * inch  # Fixed width for left side graphs (increased)
 left_gap = 0.2 * inch  # Gap between left and right sides (reduced)
 
-# Right side: node plots (initial, expected, final)
+# Right side: node plots (true_initial, initial, expected, final)
 right_width = 1.8 * inch  # Fixed width for right side plots (reduced)
 right_x = left_margin + left_width + left_gap
 
@@ -135,7 +158,7 @@ graph_height = (usable_height - 2 * (graphs_per_page - 1) * 0.2 * inch) / graphs
 # Fixed dimensions for node plots (arranged horizontally)
 node_plot_height = 1.2 * inch  # Fixed height for each node plot (reduced)
 node_plot_gap = 0.05 * inch  # Gap between node plots horizontally (reduced)
-node_plot_width = (right_width - 2 * node_plot_gap) / 3  # Width for each of the 3 plots
+node_plot_width = (right_width - 3 * node_plot_gap) / 4  # Width for each of the 4 plots
 
 num_graphs = len(flo_params_messages)
 
@@ -174,8 +197,12 @@ for page_start in range(0, num_graphs, graphs_per_page):
             c.drawImage(graph_path, left_margin, graph_y,
                        width=graph_display_width, height=graph_display_height)
         
-        # Draw node plots on right side (initial, expected, final side by side)
+        # Draw node plots on right side (true_initial, initial, expected, final side by side)
         node_plots = []
+        
+        true_init_path = f'plots/flo{graph_num}_true_initial.png'
+        if os.path.exists(true_init_path):
+            node_plots.append(true_init_path)
         
         init_path = f'plots/flo{graph_num}_initial.png'
         if os.path.exists(init_path):
