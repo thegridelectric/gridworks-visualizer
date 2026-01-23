@@ -72,7 +72,7 @@ for m in messages:
         print(f"Adding message from {m.from_alias} at {pendulum.from_timestamp(m.message_persisted_ms/1000, tz='America/New_York')}")
         flo_params_messages.append(m)
 
-print(f"Found {len(messages)} messages and {len(flo_params_messages)} of them at minute 57")
+print(f"Found {len(messages)} messages and {len(flo_params_messages)} of them at minute 57\n")
 
 session.close()
 engine.dispose()
