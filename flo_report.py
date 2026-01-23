@@ -55,7 +55,7 @@ print(f"Generating report for {house_alias} from {start_time} to {end_time}\n")
 stmt = select(MessageSql).filter(
     MessageSql.message_type_name == message_type,
     MessageSql.from_alias == f"hw1.isone.me.versant.keene.{house_alias}",
-    MessageSql.message_persisted_ms <= cast(int(end_ms-10*60*1000), BigInteger),
+    MessageSql.message_persisted_ms <= cast(int(end_ms+10*60*1000), BigInteger),
     MessageSql.message_persisted_ms >= cast(int(start_ms-10*60*1000), BigInteger),
 ).order_by(asc(MessageSql.message_persisted_ms))
 
@@ -91,9 +91,6 @@ for i, flo_params_msg in enumerate(flo_params_messages):
     g.solve_dijkstra()
     g.generate_recommendation(flo_params.to_bytes())
     v = DGraphVisualizer(g)
-    if i!=0:
-        final_node = DNodeVisualizer(g.initial_node, 'final')
-        final_node.plot(save_as=f'plots/flo{i}_final.png')
     v.plot(show=False,save_as=f'plots/flo{i+1}_graph.png')
     v.plot_pq_pairs(save_as=f'plots/flo{i+1}_pq_pairs.png')
 
@@ -120,8 +117,21 @@ for i, flo_params_msg in enumerate(flo_params_messages):
     init_node = DNodeVisualizer(g.initial_node, 'initial')
     expected_node = DNodeVisualizer(g.initial_node.next_node, 'expected')
     true_init_node.plot(save_as=f'plots/flo{i+1}_true_initial.png')
-    init_node.plot(save_as=f'plots/flo{i+1}_initial.png')
+    init_node.plot(save_as=f'plots/flo{i+1}_initi al.png')
     expected_node.plot(save_as=f'plots/flo{i+1}_expected.png')
+    if i!=0:
+        true_final_node = DNode(
+            top_temp=flo_params.initial_top_temp_f,
+            middle_temp=flo_params.initial_middle_temp_f,
+            bottom_temp=flo_params.initial_bottom_temp_f,
+            thermocline1=flo_params.initial_thermocline_1,
+            thermocline2=flo_params.initial_thermocline_2,
+            parameters=winter_oak_supergraph_params,
+        )
+        true_final_node = DNodeVisualizer(true_final_node, 'true_final')
+        true_final_node.plot(save_as=f'plots/flo{i}_true_final.png')
+        final_node = DNodeVisualizer(g.initial_node, 'final')
+        final_node.plot(save_as=f'plots/flo{i}_final.png')
 
     del g, v, init_node, expected_node
     gc.collect()
@@ -212,7 +222,7 @@ for page_start in range(0, num_graphs, graphs_per_page):
         if os.path.exists(expected_path):
             node_plots.append(expected_path)
         
-        final_path = f'plots/flo{graph_num}_final.png'
+        final_path = f'plots/flo{graph_num}_true_final.png'
         if os.path.exists(final_path):
             node_plots.append(final_path)
         
