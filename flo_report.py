@@ -117,7 +117,7 @@ for i, flo_params_msg in enumerate(flo_params_messages):
     init_node = DNodeVisualizer(g.initial_node, 'initial')
     expected_node = DNodeVisualizer(g.initial_node.next_node, 'expected')
     true_init_node.plot(save_as=f'plots/flo{i+1}_true_initial.png')
-    init_node.plot(save_as=f'plots/flo{i+1}_initi al.png')
+    init_node.plot(save_as=f'plots/flo{i+1}_initial.png')
     expected_node.plot(save_as=f'plots/flo{i+1}_expected.png')
     if i!=0:
         true_final_node = DNode(
