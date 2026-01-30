@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, select, BigInteger
 from config import Settings
 from models import MessageSql
 from gridflo.asl.types import FloParamsHouse0
-from gridflo.dijkstra_types import DNode
+from gridflo.dijkstra_types import DNode, DEdge
 from gridflo import Flo, DGraphVisualizer, DNodeVisualizer
 from gridflo.asl.types import WinterOakSupergraphParams
 import gc
@@ -85,6 +85,9 @@ if os.path.exists('plots'):
     shutil.rmtree('plots')
 os.makedirs('plots', exist_ok=True)
 
+true_init_energy, true_final_energy = [0]*len(flo_params_messages), [0]*len(flo_params_messages)
+heat_to_store_expected = []
+
 for i, flo_params_msg in enumerate(flo_params_messages):
     flo_params = FloParamsHouse0(**flo_params_msg.payload)
     g = Flo(flo_params.to_bytes())
@@ -93,6 +96,9 @@ for i, flo_params_msg in enumerate(flo_params_messages):
     v = DGraphVisualizer(g)
     v.plot(show=False,save_as=f'plots/flo{i+1}_graph.png')
     v.plot_pq_pairs(save_as=f'plots/flo{i+1}_pq_pairs.png')
+    initial_node_edge: DEdge = [e for e in g.bid_edges[g.initial_node] if e.head == g.initial_node.next_node][0]
+    hp_heat_out_expected = initial_node_edge.hp_heat_out
+    heat_to_store_expected.append(hp_heat_out_expected - initial_node_edge.load_and_losses)
 
     winter_oak_supergraph_params = WinterOakSupergraphParams(
         num_layers=flo_params.num_layers,
@@ -113,6 +119,7 @@ for i, flo_params_msg in enumerate(flo_params_messages):
         thermocline2=flo_params.initial_thermocline_2,
         parameters=winter_oak_supergraph_params,
     )
+    true_init_energy[i] = true_initial_node.energy
     true_init_node = DNodeVisualizer(true_initial_node, 'true_initial')
     init_node = DNodeVisualizer(g.initial_node, 'initial')
     expected_node = DNodeVisualizer(g.initial_node.next_node, 'expected')
@@ -128,6 +135,7 @@ for i, flo_params_msg in enumerate(flo_params_messages):
             thermocline2=flo_params.initial_thermocline_2,
             parameters=winter_oak_supergraph_params,
         )
+        true_final_energy[i-1] = true_final_node.energy
         true_final_node = DNodeVisualizer(true_final_node, 'true_final')
         true_final_node.plot(save_as=f'plots/flo{i}_true_final.png')
         final_node = DNodeVisualizer(g.initial_node, 'final')
@@ -135,6 +143,10 @@ for i, flo_params_msg in enumerate(flo_params_messages):
 
     del g, v, init_node, expected_node
     gc.collect()
+
+heat_to_store_true = [final-init for final, init in zip(true_final_energy, true_init_energy)]
+for i in range(len(flo_params_messages)):
+    print(f"Heat to store true: {heat_to_store_true[i]}, Heat to store expected: {heat_to_store_expected[i]}")
 
 # ---------------------------------------------------
 # Part 3: Generate PDF report
@@ -282,6 +294,14 @@ for page_start in range(0, num_graphs, graphs_per_page):
             
             c.drawImage(pq_pairs_path, pq_x, pq_y,
                        width=pq_plot_width, height=pq_plot_height)
+        
+        # Draw heat to store values above the node plots (drawn last so it appears on top)
+        if graph_num <= len(heat_to_store_true)-1:
+            heat_text = f"Heat to store - True: {heat_to_store_true[graph_num-1]:.1f} kWh, Expected: {heat_to_store_expected[graph_num-1]:.1f} kWh"
+            c.setFont("Helvetica", 4)
+            text_y = node_y + node_plot_height - 0.1 * inch
+            text_x = right_x + 0.1 * inch
+            c.drawString(text_x, text_y, heat_text)
 
 c.save()
 print(f"PDF report saved as {pdf_path}")
