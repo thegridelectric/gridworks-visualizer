@@ -3,6 +3,7 @@ messages.json
 result.xlsx
 *energy_data*
 *storage_data*
+*.pkl
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
