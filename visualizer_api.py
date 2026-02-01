@@ -1924,7 +1924,7 @@ class VisualizerApi():
             loop = asyncio.get_event_loop()
             return await asyncio.wait_for(
                 loop.run_in_executor(None, _plot_heatcalls_sync), 
-                timeout=5
+                timeout=15
             )
         except asyncio.TimeoutError:
             print(f"Heat calls plot timed out after 3 seconds")
