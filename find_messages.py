@@ -9,9 +9,9 @@ from models import MessageSql
 import matplotlib.pyplot as plt
 
 house_alias = "beech"
-message_type = "report"
-start_ms = pendulum.datetime(2025, 12, 21, 12, 30, tz='America/New_York').timestamp()*1000
-end_ms = pendulum.datetime(2025, 12, 22, 13, 0, tz='America/New_York').timestamp()*1000
+message_type = "weather.forecast"
+start_ms = pendulum.datetime(2026, 1, 31, 0, 0, 0, tz='America/New_York').timestamp()*1000
+end_ms = pendulum.datetime(2026, 2, 2, 0, 0, 0, tz='America/New_York').timestamp()*1000
 
 stmt = select(MessageSql).filter(
     MessageSql.message_type_name == message_type,
@@ -29,8 +29,28 @@ messages = result.scalars().all()
 
 print(f"Found {len(messages)} messages")
 
+timestamps = []
+oat_f = []
 for m in messages:
     print(pendulum.from_timestamp(m.message_created_ms/1000, tz='America/New_York'))
+    print(m.payload['OatF'][0])
+    timestamps.append(pendulum.from_timestamp(m.message_created_ms/1000, tz='America/New_York'))
+    oat_f.append(m.payload['OatF'][0])
+
+import pandas as pd
+
+df = pd.DataFrame({
+    "timestamps": timestamps,
+    "oat": oat_f
+})
+df["timestamps"] = pd.to_datetime(df["timestamps"])
+df.to_csv("timestamps_oat.csv", index=False)
+
+
+
+import matplotlib.pyplot as plt
+plt.plot(timestamps, oat_f)
+plt.show()
     
 # print("")
 # print(messages[0].payload['Ha1Params'])
