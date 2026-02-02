@@ -45,9 +45,9 @@ start_time = pendulum.datetime(START_YEAR, START_MONTH, START_DAY, START_HOUR, t
 end_time = pendulum.datetime(END_YEAR, END_MONTH, END_DAY, END_HOUR, tz='America/New_York')
 
 # TEMPORARY
-house_alias = "oak"
-start_time = pendulum.datetime(2026, 1, 29, 20, tz='America/New_York')
-end_time = pendulum.datetime(2026, 1, 29, 22, tz='America/New_York')
+# house_alias = "oak"
+# start_time = pendulum.datetime(2026, 1, 29, 20, tz='America/New_York')
+# end_time = pendulum.datetime(2026, 1, 29, 22, tz='America/New_York')
 
 start_ms = start_time.timestamp()*1000
 end_ms = end_time.timestamp()*1000
