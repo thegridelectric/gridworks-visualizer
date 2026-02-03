@@ -22,7 +22,9 @@ from reportlab.pdfgen import canvas
 from PIL import Image
 
 print("\nWelcome to the FLO report generator!\n")
-house_alias = input("Enter house alias: ")
+house_alias = input("Enter house alias (default: oak): ")
+if house_alias == "":
+    house_alias = "oak"
 
 now = pendulum.now(tz='America/New_York')
 yesterday_8pm = now.subtract(days=1).set(hour=20, minute=0, second=0, microsecond=0)
@@ -46,8 +48,8 @@ end_time = pendulum.datetime(END_YEAR, END_MONTH, END_DAY, END_HOUR, tz='America
 
 # TEMPORARY
 # house_alias = "oak"
-# start_time = pendulum.datetime(2026, 1, 29, 20, tz='America/New_York')
-# end_time = pendulum.datetime(2026, 1, 29, 22, tz='America/New_York')
+# start_time = pendulum.datetime(2026, 2, 2, 15, tz='America/New_York')
+# end_time = pendulum.datetime(2026, 2, 3, 22, tz='America/New_York')
 
 start_ms = start_time.timestamp()*1000
 end_ms = end_time.timestamp()*1000
@@ -86,6 +88,9 @@ engine.dispose()
 # Part 2: Find hourly data: hp_elec_in, hp_heat_out
 # ---------------------------------------------------
 
+def to_fahrenheit(t):
+    return round((t-32)*5/9*1000/100, 1)
+
 gbo_engine = create_engine(settings.gbo_db_url_no_async.get_secret_value())
 hourly_electricity = Table('hourly_electricity', MetaData(), autoload_with=gbo_engine)
 GboSession = sessionmaker(bind=gbo_engine)
@@ -100,10 +105,43 @@ hourly_records = gbo_session.execute(stmt_hourly).all()
 hourly_hour_start_s = []
 hourly_hp_elec_in = []
 hourly_hp_heat_out = []
+hourly_buffer_d1 = []
+hourly_buffer_d2 = []
+hourly_buffer_d3 = []
+hourly_buffer_avg_start = []  # average of buffer_depth1/2/3_start per hour
+# Storage: 9 layers tank1_depth1..3, tank2_depth1..3, tank3_depth1..3 (3 tanks x 3 depths)
+STORAGE_LAYER_COLS = [
+    'tank1_depth1_start', 'tank1_depth2_start', 'tank1_depth3_start',
+    'tank2_depth1_start', 'tank2_depth2_start', 'tank2_depth3_start',
+    'tank3_depth1_start', 'tank3_depth2_start', 'tank3_depth3_start',
+]
+hourly_storage_avg_start = []
+hourly_storage_layers = []  # list of 9-tuples (or None) per hour for printing
 for rec in hourly_records:
     hourly_hour_start_s.append(rec.hour_start_s)
     hourly_hp_elec_in.append(getattr(rec, 'hp_elec_in', getattr(rec, 'hp_kwh_el', 0)))
     hourly_hp_heat_out.append(getattr(rec, 'hp_kwh_th', getattr(rec, 'hp_heat_out', 0)))
+    d1 = getattr(rec, 'buffer_depth1_start', None)
+    d2 = getattr(rec, 'buffer_depth2_start', None)
+    d3 = getattr(rec, 'buffer_depth3_start', None)
+    d1 = to_fahrenheit(d1)
+    d2 = to_fahrenheit(d2)
+    d3 = to_fahrenheit(d3)
+    hourly_buffer_d1.append(d1)
+    hourly_buffer_d2.append(d2)
+    hourly_buffer_d3.append(d3)
+    if d1 is not None and d2 is not None and d3 is not None:
+        hourly_buffer_avg_start.append((float(d1) + float(d2) + float(d3)) / 3.0)
+    else:
+        hourly_buffer_avg_start.append(None)
+    # Storage: average of 9 layer temps
+    storage_vals = [getattr(rec, col, None) for col in STORAGE_LAYER_COLS]
+    storage_vals = [to_fahrenheit(v) for v in storage_vals]
+    hourly_storage_layers.append(tuple(storage_vals))
+    if all(v is not None for v in storage_vals):
+        hourly_storage_avg_start.append(sum(float(v) for v in storage_vals) / 9.0)
+    else:
+        hourly_storage_avg_start.append(None)
 print(f"Found {len(hourly_records)} hourly records for {house_alias} (hp_elec_in, hp_heat_out)")
 gbo_session.close()
 gbo_engine.dispose()
@@ -181,20 +219,104 @@ for i, flo_params_msg in enumerate(flo_params_messages):
     del g, v, init_node, expected_node
     gc.collect()
 
-heat_to_store_true = [final-init for final, init in zip(true_final_energy, true_init_energy)]
 heat_from_hp_true = []
+# Per-hour change in buffer depth average temp (consecutive hours)
+hourly_buffer_avg_change = []
+for j in range(len(hourly_hour_start_s) - 1):
+    a, b = hourly_buffer_avg_start[j], hourly_buffer_avg_start[j + 1]
+    if a is not None and b is not None:
+        hourly_buffer_avg_change.append(b - a)
+    else:
+        hourly_buffer_avg_change.append(None)
+# Per-hour change in storage average temp (9 layers)
+hourly_storage_avg_change = []
+for j in range(len(hourly_hour_start_s) - 1):
+    a, b = hourly_storage_avg_start[j], hourly_storage_avg_start[j + 1]
+    if a is not None and b is not None:
+        hourly_storage_avg_change.append(b - a)
+    else:
+        hourly_storage_avg_change.append(None)
+# Per-interval buffer and storage avg temp change (sum of hourly changes in that interval)
+buffer_avg_temp_change = []
+storage_avg_temp_change = []
 for i in range(len(flo_params_messages)):
     start_s = flo_params_messages[i].message_persisted_ms / 1000
     end_s = flo_params_messages[i + 1].message_persisted_ms / 1000 if i + 1 < len(flo_params_messages) else end_ms / 1000
     total = sum(hourly_hp_heat_out[j] for j in range(len(hourly_hour_start_s)) if start_s <= hourly_hour_start_s[j] < end_s)
     heat_from_hp_true.append(total)
+    interval_change_buf = None
+    for j in range(len(hourly_buffer_avg_change)):
+        if start_s <= hourly_hour_start_s[j] < end_s and hourly_buffer_avg_change[j] is not None:
+            interval_change_buf = (interval_change_buf or 0) + hourly_buffer_avg_change[j]
+    buffer_avg_temp_change.append(interval_change_buf)
+    interval_change_storage = None
+    for j in range(len(hourly_storage_avg_change)):
+        if start_s <= hourly_hour_start_s[j] < end_s and hourly_storage_avg_change[j] is not None:
+            interval_change_storage = (interval_change_storage or 0) + hourly_storage_avg_change[j]
+    storage_avg_temp_change.append(interval_change_storage)
+
+# Convert deg F change to kWh thermal: mass_kg * c_water * (delta_T_F * 5/9) / 3600
+BUFFER_VOLUME_GALLONS = 120
+STORAGE_VOLUME_GALLONS = 360  # 9 layers, 3x buffer
+BUFFER_MASS_KG = BUFFER_VOLUME_GALLONS * 3.785
+STORAGE_MASS_KG = STORAGE_VOLUME_GALLONS * 3.785
+DEG_F_TO_KWH_THERMAL_BUFFER = BUFFER_MASS_KG * 4.187 * (5 / 9) / 3600
+DEG_F_TO_KWH_THERMAL_STORAGE = STORAGE_MASS_KG * 4.187 * (5 / 9) / 3600
+buffer_kwh_thermal = []
+heat_to_store_true = []  # from storage temp change (same method as buffer)
+for i in range(len(buffer_avg_temp_change)):
+    if buffer_avg_temp_change[i] is not None:
+        buffer_kwh_thermal.append(DEG_F_TO_KWH_THERMAL_BUFFER * buffer_avg_temp_change[i])
+    else:
+        buffer_kwh_thermal.append(None)
+    if storage_avg_temp_change[i] is not None:
+        heat_to_store_true.append(DEG_F_TO_KWH_THERMAL_STORAGE * storage_avg_temp_change[i])
+    else:
+        heat_to_store_true.append(None)
 
 for i in range(len(flo_params_messages)):
-    print(f"Heat to store true: {heat_to_store_true[i]}, Heat to store expected: {heat_to_store_expected[i]}")
+    ht_true = f"{heat_to_store_true[i]:.1f}" if heat_to_store_true[i] is not None else "N/A"
+    print(f"Heat to store true: {ht_true} kWh (from storage temp), Heat to store expected: {heat_to_store_expected[i]:.1f} kWh")
+    if i < len(storage_avg_temp_change) and storage_avg_temp_change[i] is not None:
+        start_s = flo_params_messages[i].message_persisted_ms / 1000
+        end_s = flo_params_messages[i + 1].message_persisted_ms / 1000 if i + 1 < len(flo_params_messages) else end_ms / 1000
+        hours_in_interval = [j for j in range(len(hourly_hour_start_s)) if start_s <= hourly_hour_start_s[j] < end_s]
+        print(f"  Storage avg temp change: {storage_avg_temp_change[i]:.2f} deg F -> {heat_to_store_true[i]:.1f} kWh")
+        for j in hours_in_interval:
+            avg = hourly_storage_avg_start[j]
+            layers = hourly_storage_layers[j]
+            layer_str = ", ".join(f"{v}" if v is not None else "N/A" for v in layers)
+            print(f"    Hour j={j} (start_s={hourly_hour_start_s[j]}): 9 layers = [{layer_str}] -> avg={avg:.2f}" if avg is not None else f"    Hour j={j}: 9 layers = [{layer_str}] -> avg=N/A")
+            if j > 0 and hourly_storage_avg_change[j - 1] is not None:
+                print(f"      Change from previous hour: {hourly_storage_avg_change[j - 1]:.2f} deg F")
+    if i < len(buffer_avg_temp_change) and buffer_avg_temp_change[i] is not None:
+        print(f"  Buffer: {buffer_avg_temp_change[i]:.2f} deg F change -> {buffer_kwh_thermal[i]:.2f} kWh thermal")
 
 for j in range(len(hourly_hour_start_s)):
     hour_dt = pendulum.from_timestamp(hourly_hour_start_s[j], tz='America/New_York')
     print(f"Hourly {hour_dt}: hp_elec_in={hourly_hp_elec_in[j]}, hp_heat_out={hourly_hp_heat_out[j]}")
+    d1, d2, d3 = hourly_buffer_d1[j], hourly_buffer_d2[j], hourly_buffer_d3[j]
+    avg = hourly_buffer_avg_start[j]
+    if d1 is not None and d2 is not None and d3 is not None:
+        print(f"  Buffer depths (start): depth1={d1}, depth2={d2}, depth3={d3} -> avg={avg:.2f} deg F")
+        if j > 0 and hourly_buffer_avg_start[j - 1] is not None:
+            ch_f = hourly_buffer_avg_change[j - 1]
+            ch_kwh = DEG_F_TO_KWH_THERMAL_BUFFER * ch_f
+            print(f"  Change from previous hour: {ch_f:.2f} deg F -> {ch_kwh:.2f} kWh thermal")
+    else:
+        print(f"  Buffer depths (start): depth1={d1}, depth2={d2}, depth3={d3} -> avg=N/A")
+    # Storage: 9 layer temps and average
+    layers = hourly_storage_layers[j]
+    avg_s = hourly_storage_avg_start[j]
+    if all(v is not None for v in layers):
+        layer_str = ", ".join(f"{float(v):.1f}" for v in layers)
+        print(f"  Storage (start): {STORAGE_LAYER_COLS[0]}..{STORAGE_LAYER_COLS[-1]} = [{layer_str}] -> avg={avg_s:.2f} deg F")
+        if j > 0 and hourly_storage_avg_start[j - 1] is not None:
+            ch_s = hourly_storage_avg_change[j - 1]
+            print(f"  Storage change from previous hour: {ch_s:.2f} deg F")
+    else:
+        layer_str = ", ".join(str(v) for v in layers)
+        print(f"  Storage (start): 9 layers = [{layer_str}] -> avg=N/A")
 
 # ---------------------------------------------------
 # Comparison plot
@@ -223,8 +345,8 @@ model = RuleBasedStorageModel(
 
 for i in range(len(flo_params_messages)-1):
     start_node = generator.find_closest_node(true_initial_states[i])
-    predicted_end_state_from_true = model.next_node(true_initial_states[i], heat_to_store_true[i])
-    predicted_end_state_from_node = model.next_node(start_node, heat_to_store_true[i])
+    predicted_end_state_from_true = model.next_node(true_initial_states[i], heat_to_store_expected[i])
+    predicted_end_state_from_node = model.next_node(start_node, heat_to_store_expected[i])
     end_node = generator.find_closest_node(predicted_end_state_from_node)
     DNodeComparator(
         nodes = [
@@ -337,16 +459,63 @@ for page_start in range(0, num_graphs, graphs_per_page):
             comp_y = ((graph_y - comp_display_height) if (graph_y is not None) else (current_y - comp_display_height)) + 0.8 * inch
             comp_x = right_x + (right_width - comp_display_width) / 2
 
-            # Draw heat text above the comparison plot first
+            # Draw table above comparison plot: 4 rows + header, 3 columns (-, True, Expected)
             if graph_num <= len(heat_to_store_true) and graph_num > 0:
-                heat_text = f"Heat to store - True: {heat_to_store_true[graph_num-1]:.1f} kWh, Expected: {heat_to_store_expected[graph_num-1]:.1f} kWh"
-                c.setFont("Helvetica", 4)
-                text_y = comp_y + comp_display_height + 0.08 * inch
-                text_x = right_x + 0.1 * inch
-                c.drawString(text_x, text_y, heat_text)
-                if graph_num <= len(heat_from_hp_true) and graph_num <= len(heat_from_hp_expected):
-                    heat_from_hp_text = f"Heat from HP - True: {heat_from_hp_true[graph_num-1]:.1f} kWh, Expected: {heat_from_hp_expected[graph_num-1]:.1f} kWh"
-                    c.drawString(text_x, text_y - 0.12 * inch, heat_from_hp_text)
+                idx = graph_num - 1
+                hp_true = heat_from_hp_true[idx] if idx < len(heat_from_hp_true) else None
+                hp_exp = heat_from_hp_expected[idx] if idx < len(heat_from_hp_expected) else None
+                store_true = heat_to_store_true[idx] if idx < len(heat_to_store_true) else None
+                store_exp = heat_to_store_expected[idx] if idx < len(heat_to_store_expected) else None
+                buf_true = buffer_kwh_thermal[idx] if idx < len(buffer_kwh_thermal) else None
+                load_true = (hp_true - store_true - buf_true) if (hp_true is not None and store_true is not None and buf_true is not None) else None
+                load_expected = (hp_exp - store_exp - 0) if (hp_exp is not None and store_exp is not None) else None
+                # Table layout: 4 columns (-, True, Expected, Diff kWh)
+                row_h = 0.08 * inch  # compact vertically
+                col_w = [0.47 * inch, 0.28 * inch, 0.28 * inch, 0.28 * inch]  # label, true, expected, diff (narrower)
+                table_w = sum(col_w)
+                table_x = comp_x + comp_display_width / 2 - table_w / 2  # center table on comparison image
+                table_y_top = comp_y + comp_display_height + 0.44 * inch  # table lower (was 0.56)
+                n_rows = 5  # header + 4 data rows
+                table_y_bottom = table_y_top - n_rows * row_h
+                # Header row
+                headers = ["", "True", "Expected", "Error"]
+                c.setFont("Helvetica-Bold", 3)
+                for col_i, h in enumerate(headers):
+                    cx = table_x + sum(col_w[:col_i]) + 0.02 * inch
+                    cy = table_y_top - row_h + 0.02 * inch
+                    c.drawString(cx, cy, h)
+                # Data rows
+                rows = [
+                    ("→ Heat to store", store_true, store_exp),
+                    ("→ Heat to buffer", buf_true, 0),
+                    ("→ Heat to house", load_true, load_expected),
+                    ("Heat from HP →", hp_true, hp_exp),
+                ]
+                for row_i, (label, true_val, exp_val) in enumerate(rows):
+                    c.setFont("Helvetica-Bold", 3) if label == "→ Heat to store" else c.setFont("Helvetica", 3)
+                    y_row = table_y_top - (row_i + 2) * row_h
+                    cy = y_row + 0.02 * inch
+                    c.drawString(table_x + 0.02 * inch, cy, label[:16] if len(label) > 16 else label)
+                    true_str = f"{true_val:.1f}" if true_val is not None else "N/A"
+                    exp_str = f"{exp_val:.1f}" if exp_val is not None else "N/A"
+                    c.drawString(table_x + col_w[0] + 0.02 * inch, cy, true_str)
+                    c.drawString(table_x + col_w[0] + col_w[1] + 0.02 * inch, cy, exp_str)
+                    # Diff = true - expected (kWh)
+                    if true_val is not None and exp_val is not None:
+                        diff = true_val - exp_val
+                        diff_str = f"{diff:.1f}"
+                    else:
+                        diff_str = "-"
+                    c.drawString(table_x + col_w[0] + col_w[1] + col_w[2] + 0.02 * inch, cy, diff_str)
+                # Grid lines
+                c.setLineWidth(0.3)
+                for r in range(n_rows + 1):
+                    y = table_y_top - r * row_h
+                    c.line(table_x, y, table_x + table_w, y)
+                for col_i in range(5):  # 5 vertical lines for 4 columns
+                    x = table_x + sum(col_w[:col_i])
+                    c.line(x, table_y_bottom, x, table_y_top)
+                c.setLineWidth(1)
 
             c.drawImage(comparison_path, comp_x, comp_y,
                         width=comp_display_width, height=comp_display_height)
