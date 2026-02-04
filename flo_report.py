@@ -20,6 +20,9 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
 from PIL import Image
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 print("\nWelcome to the FLO report generator!\n")
 house_alias = input("Enter house alias (default: oak): ")
@@ -160,6 +163,7 @@ heat_from_hp_expected = []
 true_initial_states, true_final_states = [None]*len(flo_params_messages), [None]*len(flo_params_messages)
 
 for i, flo_params_msg in enumerate(flo_params_messages):
+    print(f"\nProcessing FLO {i+1}/{len(flo_params_messages)}...")
     flo_params = FloParamsHouse0(**flo_params_msg.payload)
     g = Flo(flo_params.to_bytes())
     g.solve_dijkstra()
@@ -519,6 +523,95 @@ for page_start in range(0, num_graphs, graphs_per_page):
 
             c.drawImage(comparison_path, comp_x, comp_y,
                         width=comp_display_width, height=comp_display_height)
+
+# ---------------------------------------------------
+# Error over time plot (final page)
+# ---------------------------------------------------
+n_intervals = len(flo_params_messages)
+x = list(range(n_intervals))
+store_err = []
+buffer_err = []
+house_err = []
+hp_err = []
+for i in range(n_intervals):
+    st = heat_to_store_true[i] if i < len(heat_to_store_true) else None
+    se = heat_to_store_expected[i] if i < len(heat_to_store_expected) else None
+    store_err.append((st - se) if (st is not None and se is not None) else float('nan'))
+    buf = buffer_kwh_thermal[i] if i < len(buffer_kwh_thermal) else None
+    buffer_err.append(buf if buf is not None else float('nan'))
+    hpt = heat_from_hp_true[i] if i < len(heat_from_hp_true) else None
+    hpe = heat_from_hp_expected[i] if i < len(heat_from_hp_expected) else None
+    store_t = heat_to_store_true[i] if i < len(heat_to_store_true) else None
+    store_e = heat_to_store_expected[i] if i < len(heat_to_store_expected) else None
+    buf_t = buffer_kwh_thermal[i] if i < len(buffer_kwh_thermal) else None
+    load_t = (hpt - store_t - buf_t) if (hpt is not None and store_t is not None and buf_t is not None) else None
+    load_e = (hpe - store_e - 0) if (hpe is not None and store_e is not None) else None
+    house_err.append((load_t - load_e) if (load_t is not None and load_e is not None) else float('nan'))
+    hp_err.append((hpt - hpe) if (hpt is not None and hpe is not None) else float('nan'))
+
+hp_true_list = [heat_from_hp_true[i] if i < len(heat_from_hp_true) and heat_from_hp_true[i] is not None else float('nan') for i in range(n_intervals)]
+# Heat from HP error only when HP was on (true heat out >= 0.5 kWh); else NaN
+for i in range(n_intervals):
+    if i < len(hp_true_list) and hp_true_list[i] < 0.5:
+        hp_err[i] = float('nan')
+
+fs_title, fs_label, fs_ticks = 7, 6, 5  # smaller text
+fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(5, 1, figsize=(5, 8), sharex=True)
+# Plot 1: Heat to storage error
+ax1.step(x, store_err, where='post', color='tab:orange')
+ax1.set_ylabel('Error (kWh)', fontsize=fs_label)
+ax1.set_title('Heat to storage (True - Expected)', fontsize=fs_title)
+ax1.tick_params(axis='both', labelsize=fs_ticks)
+ax1.set_ylim(-5, 5)
+ax1.grid(True, alpha=0.3)
+ax1.axhline(y=0, color='gray', linestyle='--', linewidth=0.8)
+# Plot 2: Heat to buffer error
+ax2.step(x, buffer_err, where='post')
+ax2.set_ylabel('Error (kWh)', fontsize=fs_label)
+ax2.set_title('Heat to buffer (True - Expected)', fontsize=fs_title)
+ax2.tick_params(axis='both', labelsize=fs_ticks)
+ax2.set_ylim(-5, 5)
+ax2.grid(True, alpha=0.3)
+ax2.axhline(y=0, color='gray', linestyle='--', linewidth=0.8)
+# Plot 3: Heat to house error
+ax3.step(x, house_err, where='post')
+ax3.set_ylabel('Error (kWh)', fontsize=fs_label)
+ax3.set_title('Heat to house (True - Expected)', fontsize=fs_title)
+ax3.tick_params(axis='both', labelsize=fs_ticks)
+ax3.set_ylim(-5, 5)
+ax3.grid(True, alpha=0.3)
+ax3.axhline(y=0, color='gray', linestyle='--', linewidth=0.8)
+# Plot 4: Heat from HP error (only when HP was on)
+ax4.step(x, hp_err, where='post')
+ax4.set_ylabel('Error (kWh)', fontsize=fs_label)
+ax4.set_title('Heat from HP (True - Expected)', fontsize=fs_title)
+ax4.tick_params(axis='both', labelsize=fs_ticks)
+ax4.set_ylim(-5, 5)
+ax4.grid(True, alpha=0.3)
+ax4.axhline(y=0, color='gray', linestyle='--', linewidth=0.8)
+# Plot 5: HP true heat out
+ax5.step(x, hp_true_list, where='post', color='green')
+ax5.set_xlabel('Interval', fontsize=fs_label)
+ax5.set_ylabel('kWh', fontsize=fs_label)
+ax5.set_title('HP true heat out', fontsize=fs_title)
+ax5.tick_params(axis='both', labelsize=fs_ticks)
+ax5.grid(True, alpha=0.3)
+plt.tight_layout()
+error_plot_path = 'plots/error_over_time.png'
+plt.savefig(error_plot_path, dpi=150)
+plt.close()
+
+c.showPage()
+if os.path.exists(error_plot_path):
+    err_img = Image.open(error_plot_path)
+    ew, eh = err_img.size
+    aspect = eh / ew
+    # Draw on full page width with margin
+    draw_w = page_width - 2 * margin
+    draw_h = min(page_height - 2 * margin, draw_w * aspect)
+    draw_w = draw_h / aspect
+    c.drawImage(error_plot_path, (page_width - draw_w) / 2, page_height - margin - draw_h,
+                width=draw_w, height=draw_h)
 
 c.save()
 print(f"PDF report saved as {pdf_path}")
