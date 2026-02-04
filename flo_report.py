@@ -13,6 +13,7 @@ from gridflo.supergraph_generator import SupergraphGenerator, RuleBasedStorageMo
 from gridflo.supergraph_generator import WinterOakSupergraphParams
 from gridflo.dijkstra_types import DNode
 from gridflo.dgraph_visualizer import DNodeComparator
+import csv
 import gc
 import os
 import shutil
@@ -381,6 +382,38 @@ for i in range(len(flo_params_messages)-1):
     ).plot(save_as=f'plots/flo{i}_node_comparison.png')
 
 # ---------------------------------------------------
+# CSV output: hourly heat flows (actual vs expected)
+# ---------------------------------------------------
+csv_path = os.path.expanduser(f'~/Desktop/flo_report_{house_alias}.csv')
+with open(csv_path, 'w', newline='') as f:
+    w = csv.writer(f)
+    w.writerow(['Timestamp', 'H2S_A', 'H2S_E', 'H2B_A', 'H2B_E', 'H2H_A', 'H2H_E', 'HP_A', 'HP_E'])
+    for i in range(len(flo_params_messages)):
+        dt = pendulum.from_timestamp(flo_params_messages[i].message_persisted_ms / 1000, tz='America/New_York')
+        ts = (dt.start_of('hour') if dt.minute < 30 else dt.add(hours=1).start_of('hour')).format('YYYY-MM-DD HH:00')
+        st = heat_to_store_true[i] if i < len(heat_to_store_true) else None
+        se = heat_to_store_expected[i] if i < len(heat_to_store_expected) else None
+        buf = buffer_kwh_thermal[i] if i < len(buffer_kwh_thermal) else None
+        hpt = heat_from_hp_true[i] if i < len(heat_from_hp_true) else None
+        hpe = heat_from_hp_expected[i] if i < len(heat_from_hp_expected) else None
+        h2h_a = (hpt - st - buf) if (hpt is not None and st is not None and buf is not None) else ''
+        h2h_e = (hpe - se - 0) if (hpe is not None and se is not None) else ''
+        def r2(v):
+            return round(v, 2) if isinstance(v, (int, float)) and v != '' else (v if v != '' else '')
+        w.writerow([
+            ts,
+            r2(st) if st is not None else '',
+            r2(se) if se is not None else '',
+            r2(buf) if buf is not None else '',
+            0,
+            r2(h2h_a) if h2h_a != '' else '',
+            r2(h2h_e) if h2h_e != '' else '',
+            r2(hpt) if hpt is not None else '',
+            r2(hpe) if hpe is not None else '',
+        ])
+print(f"CSV report saved as {csv_path}")
+
+# ---------------------------------------------------
 # Part 3: Generate PDF report
 # ---------------------------------------------------
 
@@ -612,6 +645,78 @@ if os.path.exists(error_plot_path):
     draw_w = draw_h / aspect
     c.drawImage(error_plot_path, (page_width - draw_w) / 2, page_height - margin - draw_h,
                 width=draw_w, height=draw_h)
+
+# ---------------------------------------------------
+# Actual vs Expected page (4 metrics, same order as last page)
+# ---------------------------------------------------
+house_true_list = []
+house_expected_list = []
+for i in range(n_intervals):
+    hpt = heat_from_hp_true[i] if i < len(heat_from_hp_true) else None
+    hpe = heat_from_hp_expected[i] if i < len(heat_from_hp_expected) else None
+    st = heat_to_store_true[i] if i < len(heat_to_store_true) else None
+    se = heat_to_store_expected[i] if i < len(heat_to_store_expected) else None
+    buf = buffer_kwh_thermal[i] if i < len(buffer_kwh_thermal) else None
+    load_t = (hpt - st - buf) if (hpt is not None and st is not None and buf is not None) else None
+    load_e = (hpe - se - 0) if (hpe is not None and se is not None) else None
+    house_true_list.append(load_t if load_t is not None else float('nan'))
+    house_expected_list.append(load_e if load_e is not None else float('nan'))
+buf_expected_list = [0.0] * n_intervals
+
+store_true_vals = [heat_to_store_true[i] if i < len(heat_to_store_true) and heat_to_store_true[i] is not None else float('nan') for i in range(n_intervals)]
+store_expected_vals = [heat_to_store_expected[i] if i < len(heat_to_store_expected) else float('nan') for i in range(n_intervals)]
+buf_true_vals = [buffer_kwh_thermal[i] if i < len(buffer_kwh_thermal) and buffer_kwh_thermal[i] is not None else float('nan') for i in range(n_intervals)]
+hp_expected_list = [heat_from_hp_expected[i] if i < len(heat_from_hp_expected) and heat_from_hp_expected[i] is not None else float('nan') for i in range(n_intervals)]
+
+fig2, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(5, 8), sharex=True)
+kwargs_actual = dict(color='tab:blue', alpha=0.7, where='post')
+kwargs_expected = dict(color='tab:blue', alpha=0.7, where='post', linestyle='--')
+# Heat to storage (expected = implied)
+ax1.step(x, store_true_vals, **kwargs_actual, label='actual (measured)')
+ax1.step(x, store_expected_vals, color='tab:orange', alpha=0.7, where='post', linestyle='--', label='expected (implied)')
+ax1.set_ylabel('kWh', fontsize=fs_label)
+ax1.set_title('Heat to storage', fontsize=fs_title)
+ax1.tick_params(axis='both', labelsize=fs_ticks)
+ax1.legend(fontsize=fs_ticks)
+ax1.grid(True, alpha=0.3)
+# Heat to buffer
+ax2.step(x, buf_true_vals, **kwargs_actual, label='actual (measured)')
+ax2.step(x, buf_expected_list, **kwargs_expected, label='expected (short-cycling)')
+ax2.set_ylabel('kWh', fontsize=fs_label)
+ax2.set_title('Heat to buffer', fontsize=fs_title)
+ax2.tick_params(axis='both', labelsize=fs_ticks)
+ax2.legend(fontsize=fs_ticks)
+ax2.grid(True, alpha=0.3)
+ax3.step(x, house_true_list, color='tab:orange', alpha=0.7, where='post', label='actual (implied)')
+ax3.step(x, house_expected_list, **kwargs_expected, label='expected (house parameters model)')
+ax3.set_ylabel('kWh', fontsize=fs_label)
+ax3.set_title('Heat to house', fontsize=fs_title)
+ax3.tick_params(axis='both', labelsize=fs_ticks)
+ax3.legend(fontsize=fs_ticks)
+ax3.grid(True, alpha=0.3)
+ax4.step(x, hp_true_list, **kwargs_actual, label='actual (measured)')
+ax4.step(x, hp_expected_list, **kwargs_expected, label='expected (FLO)')
+ax4.set_xlabel('Interval', fontsize=fs_label)
+ax4.set_ylabel('kWh', fontsize=fs_label)
+ax4.set_title('Heat from HP', fontsize=fs_title)
+ax4.tick_params(axis='both', labelsize=fs_ticks)
+ax4.legend(fontsize=fs_ticks)
+ax4.grid(True, alpha=0.3)
+plt.tight_layout()
+actual_expected_plot_path = 'plots/actual_vs_expected.png'
+plt.savefig(actual_expected_plot_path, dpi=150)
+plt.close()
+
+c.showPage()
+if os.path.exists(actual_expected_plot_path):
+    ae_img = Image.open(actual_expected_plot_path)
+    ae_w, ae_h = ae_img.size
+    ae_aspect = ae_h / ae_w
+    draw_w2 = page_width - 2 * margin
+    draw_h2 = min(page_height - 2 * margin, draw_w2 * ae_aspect)
+    draw_w2 = draw_h2 / ae_aspect
+    c.drawImage(actual_expected_plot_path, (page_width - draw_w2) / 2, page_height - margin - draw_h2,
+                width=draw_w2, height=draw_h2)
 
 c.save()
 print(f"PDF report saved as {pdf_path}")
