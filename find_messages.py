@@ -29,28 +29,8 @@ messages = result.scalars().all()
 
 print(f"Found {len(messages)} messages")
 
-timestamps = []
-oat_f = []
 for m in messages:
     print(pendulum.from_timestamp(m.message_created_ms/1000, tz='America/New_York'))
-    print(m.payload['OatF'][0])
-    timestamps.append(pendulum.from_timestamp(m.message_created_ms/1000, tz='America/New_York'))
-    oat_f.append(m.payload['OatF'][0])
-
-import pandas as pd
-
-df = pd.DataFrame({
-    "timestamps": timestamps,
-    "oat": oat_f
-})
-df["timestamps"] = pd.to_datetime(df["timestamps"])
-df.to_csv("timestamps_oat.csv", index=False)
-
-
-
-import matplotlib.pyplot as plt
-plt.plot(timestamps, oat_f)
-plt.show()
     
 # print("")
 # print(messages[0].payload['Ha1Params'])
