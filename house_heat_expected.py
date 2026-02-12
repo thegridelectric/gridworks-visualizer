@@ -7,11 +7,24 @@ Only requires two CSV files — no database or FLO solver needed:
   2. Weather station CSV       (weather_KMEMILLI18.csv_processed.csv)
 """
 
-HOUSE_ALIAS = "oak"
+PARAMETERS = {
+    'oak': {
+        'ALPHA': 7.6,
+        'BETA': -0.13,
+        'GAMMA': 0.0024,
+    },
+    'beech': {
+        'ALPHA': 8.6,
+        'BETA': -0.14,
+        'GAMMA': 0.005,
+    },
+}
+
+HOUSE_ALIAS = "beech"
 WEATHER_CSV = "weather_KMEMILLI18.csv_processed.csv"
-ALPHA = 7.6
-BETA = -0.13
-GAMMA = 0.0024
+ALPHA = PARAMETERS[HOUSE_ALIAS]['ALPHA']
+BETA = PARAMETERS[HOUSE_ALIAS]['BETA']
+GAMMA = PARAMETERS[HOUSE_ALIAS]['GAMMA']
 FIND_WINDOW_LENGTH = False  # If True, sweep 1–20 days and plot RMSE; if False, use 10 days
 
 import numpy as np
@@ -97,8 +110,11 @@ all_days = sorted(set(h.floor("D") for h in all_hours_with_da))
 print(f"Rolling fit: {len(all_days)} days, {len(all_hours_with_da)} hours with D_a")
 
 def _rolling_fit_for_window(tw):
-    """Run rolling day-by-day fit for a given trailing window length."""
+    """Run rolling day-by-day fit for a given trailing window length.
+    Returns (fits, fitted_days, params_list) where params_list is [(day, alpha, beta, gamma), ...].
+    """
     fits = {}
+    params_list = []
     fitted_days = 0
     for current_day in all_days:
         window_start = current_day - pd.Timedelta(days=tw)
@@ -134,6 +150,7 @@ def _rolling_fit_for_window(tw):
         except np.linalg.LinAlgError:
             continue
         a_opt, b_opt, g_opt = coeffs
+        params_list.append((current_day, a_opt, b_opt, g_opt))
 
         current_day_hours = [h for h in all_hours_with_da if h.floor("D") == current_day]
         for h in current_day_hours:
@@ -142,7 +159,7 @@ def _rolling_fit_for_window(tw):
             row = edf_lookup[h]
             fits[h] = a_opt + b_opt * row["oat_f"] + g_opt * row["ws_mph"] * (65 - row["oat_f"])
         fitted_days += 1
-    return fits, fitted_days
+    return fits, fitted_days, params_list
 
 def _rolling_fit_with_solar(tw):
     """Rolling fit with solar gains: fit alpha/beta/gamma, then delta for solar."""
@@ -206,10 +223,12 @@ if FIND_WINDOW_LENGTH:
     rolling_fits = {}
     print(f"Sweeping {len(list(RMSE_SWEEP))} window lengths...")
 
+    rolling_params = {}
     for tw in RMSE_SWEEP:
         print(f"  Fitting window={tw} days...", end=" ", flush=True)
-        fits, fitted_days = _rolling_fit_for_window(tw)
+        fits, fitted_days, params_list = _rolling_fit_for_window(tw)
         rolling_fits[tw] = fits
+        rolling_params[tw] = params_list
         print(f"{fitted_days} days fitted, {len(fits)} hours predicted")
 
     # Compute RMSE for each window length
@@ -230,6 +249,7 @@ if FIND_WINDOW_LENGTH:
     BEST_WINDOW = min(tw for tw, r in rmse_by_tw.items() if r == best_rmse)
     print(f"\nBest trailing window: {BEST_WINDOW} days (RMSE={best_rmse:.3f} kWh)")
     best_fit = rolling_fits[BEST_WINDOW]
+    params_list = rolling_params[BEST_WINDOW]
 
     # ---- Figure 1: RMSE vs window length ----
     fig_rmse, ax_rmse = plt.subplots(figsize=(8, 4))
@@ -247,8 +267,17 @@ if FIND_WINDOW_LENGTH:
 else:
     BEST_WINDOW = 10
     print(f"Using default trailing window: {BEST_WINDOW} days")
-    best_fit, _fd = _rolling_fit_for_window(BEST_WINDOW)
+    best_fit, _fd, params_list = _rolling_fit_for_window(BEST_WINDOW)
     print(f"  {_fd} days fitted, {len(best_fit)} hours predicted")
+
+# ---- Export fitted parameters (alpha, beta, gamma) per day ----
+params_df = pd.DataFrame(
+    [{"day": d.strftime("%Y-%m-%d"), "alpha": round(a, 3), "beta": round(b, 3), "gamma": round(g, 6)}
+     for d, a, b, g in params_list]
+)
+params_csv = data_dir / f"{HOUSE_ALIAS}_rolling_params_{BEST_WINDOW}d.csv"
+params_df.to_csv(params_csv, index=False)
+print(f"Exported {len(params_list)} days of parameters to {params_csv.name}")
 
 # ---- Rolling fit with solar gains (same window) ----
 print(f"Fitting with solar gains (trailing {BEST_WINDOW} days)...", flush=True)
