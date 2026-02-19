@@ -284,6 +284,18 @@ class VisualizerApi():
     def to_hex(self, rgba):
         r, g, b, a = (int(c * 255) for c in rgba)
         return f'#{r:02x}{g:02x}{b:02x}'
+
+    def add_internet_down_highlights(self, fig, request):
+        for period_start, period_end in self.data[request].get('late_persistence_periods', []):
+            fig.add_vrect(
+                x0=period_start, x1=period_end,
+                fillcolor="red", opacity=0.15,
+                layer="below", line_width=0,
+                annotation_text="Late persistence",
+                annotation_position="top left",
+                annotation_font_size=10,
+                annotation_font_color="red",
+            )
     
     def reduce_data_size(self, channel_data, channel_name, max_timestamp):
 
@@ -574,6 +586,29 @@ class VisualizerApi():
             if "Dormant" in self.data[request]['top_states']:
                 self.data[request]['top_states']['Admin'] = self.data[request]['top_states']['Dormant']
                 del self.data[request]['top_states']['Dormant']
+
+            # Identify periods where messages were persisted 10+ minutes after creation
+            late_threshold_ms = 5 * 60 * 1000
+            reports_by_created = sorted(
+                [m for m in reports if m.message_created_ms is not None],
+                key=lambda m: m.message_created_ms
+            )
+            late_periods = []
+            period_start = None
+            period_end = None
+            for m in reports_by_created:
+                if (m.message_persisted_ms - m.message_created_ms) > late_threshold_ms:
+                    if period_start is None:
+                        period_start = m.message_created_ms
+                    period_end = m.message_created_ms
+                else:
+                    if period_start is not None:
+                        late_periods.append((self.to_datetime(period_start), self.to_datetime(period_end)))
+                        period_start = None
+                        period_end = None
+            if period_start is not None:
+                late_periods.append((self.to_datetime(period_start), self.to_datetime(period_end)))
+            self.data[request]['late_persistence_periods'] = late_periods
             
             # LocalControl state
             self.data[request]['lc_states'] = {'all': {'times':[], 'values':[]}}
@@ -1596,6 +1631,7 @@ class VisualizerApi():
             fig.update_layout(yaxis=dict(title='Temperature [F]'))
         elif plotting_power and not plotting_temperatures:
             fig.update_layout(yaxis=dict(title='Power [kW] or Flow [GPM]', range=[0,10]))
+        self.add_internet_down_highlights(fig, request)
         fig.update_layout(
             title=dict(text='Heat pump', x=0.5, xanchor='center'),
             margin=dict(t=30, b=30),
@@ -1724,6 +1760,7 @@ class VisualizerApi():
         elif plotting_power and not plotting_temperatures:
             fig.update_layout(yaxis=dict(title='Flow [GPM] or Power [W]', range=[0,20]))
 
+        self.add_internet_down_highlights(fig, request)
         fig.update_layout(
             title=dict(text='Distribution', x=0.5, xanchor='center'),
             plot_bgcolor='#1b1b1c' if request.darkmode else 'white',
@@ -1865,6 +1902,7 @@ class VisualizerApi():
                         )
                     )
 
+            self.add_internet_down_highlights(fig, request)
             fig.update_layout(
                 title=dict(text='Heat calls', x=0.5, xanchor='center'),
                 plot_bgcolor='#1b1b1c' if request.darkmode else 'white',
@@ -1992,6 +2030,7 @@ class VisualizerApi():
             fig.update_layout(yaxis2=dict(title='Outside air temperature [F]'))
 
         fig.update_layout(yaxis=dict(title='Zone temperature [F]'))
+        self.add_internet_down_highlights(fig, request)
         fig.update_layout(
             title=dict(text='Zones', x=0.5, xanchor='center'),
             plot_bgcolor='#1b1b1c' if request.darkmode else 'white',
@@ -2129,6 +2168,7 @@ class VisualizerApi():
                     )
                 )
                
+        self.add_internet_down_highlights(fig, request)
         fig.update_layout(
             title=dict(text='Buffer', x=0.5, xanchor='center'),
             plot_bgcolor='#1b1b1c' if request.darkmode else 'white',
@@ -2356,6 +2396,7 @@ class VisualizerApi():
         elif plotting_power and not plotting_temperatures:
             fig.update_layout(yaxis=dict(title='GPM, kW, or kWh'))
 
+        self.add_internet_down_highlights(fig, request)
         fig.update_layout(
             title=dict(text='Storage', x=0.5, xanchor='center'),
             plot_bgcolor='#1b1b1c' if request.darkmode else 'white',
@@ -2447,6 +2488,8 @@ class VisualizerApi():
                             hovertemplate="%{x|%H:%M:%S}"
                         )
                     )
+
+        self.add_internet_down_highlights(fig, request)
 
         fig.update_layout(
             title=dict(text='Top State', x=0.5, xanchor='center'),
@@ -2542,6 +2585,7 @@ class VisualizerApi():
                         )
                     )
 
+        self.add_internet_down_highlights(fig, request)
         fig.update_layout(
             title=dict(text='LocalControl State', x=0.5, xanchor='center'),
             plot_bgcolor='#1b1b1c' if request.darkmode else 'white',
@@ -2630,6 +2674,7 @@ class VisualizerApi():
                         )
                     )
 
+        self.add_internet_down_highlights(fig, request)
         fig.update_layout(
             title=dict(text='LeafAlly State', x=0.5, xanchor='center'),
             plot_bgcolor='#1b1b1c' if request.darkmode else 'white',
@@ -2706,6 +2751,7 @@ class VisualizerApi():
                 )
             )
 
+        self.add_internet_down_highlights(fig, request)
         fig.update_layout(
             title=dict(text='Weather Forecasts', x=0.5, xanchor='center'),
             plot_bgcolor='#1b1b1c' if request.darkmode else 'white',
@@ -2831,6 +2877,7 @@ class VisualizerApi():
             
         fig.update_layout(yaxis=dict(title='Total price [$/MWh]'))
         fig.update_layout(yaxis2=dict(title='LMP [$/MWh]'))
+        self.add_internet_down_highlights(fig, request)
         fig.update_layout(
             # shapes = shapes_list,
             title=dict(text='Price Forecast' if not aggregate else '', x=0.5, xanchor='center'),
