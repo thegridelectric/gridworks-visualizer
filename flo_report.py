@@ -180,12 +180,9 @@ for i, flo_params_msg in enumerate(flo_params_messages):
     winter_oak_supergraph_params = WinterOakSupergraphParams(
         num_layers=flo_params.num_layers,
         storage_volume_gallons=flo_params.storage_volume_gallons,
-        hp_max_elec_kw=flo_params.hp_max_elec_kw,
-        cop_intercept=flo_params.cop_intercept,
-        cop_oat_coeff=flo_params.cop_oat_coeff,
-        cop_min=flo_params.cop_min,
-        cop_min_oat_f=flo_params.cop_min_oat_f,
         constant_delta_t=flo_params.constant_delta_t,
+        max_hp_kwh_th=25,
+        max_load_kwh_th=20,
     )
     
     true_initial_node = DNode(
