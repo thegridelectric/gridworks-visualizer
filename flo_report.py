@@ -327,11 +327,8 @@ for j in range(len(hourly_hour_start_s)):
 params = WinterOakSupergraphParams(
     num_layers=27,
     storage_volume_gallons=360,
-    hp_max_elec_kw=11.0,
-    cop_intercept=1.02,
-    cop_oat_coeff=0.0257,
-    cop_min=1.4,
-    cop_min_oat_f=15.0,
+    max_hp_kwh_th=25,
+    max_load_kwh_th=20,
     constant_delta_t=20
 )
 
