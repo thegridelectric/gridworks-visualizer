@@ -596,20 +596,26 @@ class VisualizerApi():
             late_periods = []
             period_start = None
             period_end = None
+            period_end_persisted_ms = None  # for single-message periods: use creation->persistence so band is visible
             for m in reports_by_created:
                 if (m.message_persisted_ms - m.message_created_ms) > late_threshold_ms:
                     if period_start is None:
                         period_start = m.message_created_ms
                     period_end = m.message_created_ms
+                    period_end_persisted_ms = m.message_persisted_ms
                 else:
                     if period_start is not None:
-                        late_periods.append((self.to_datetime(period_start), self.to_datetime(period_end)))
+                        # If zero-width (single message), show band from creation to persistence
+                        end_ms = period_end_persisted_ms if period_start == period_end else period_end
+                        late_periods.append((self.to_datetime(period_start), self.to_datetime(end_ms)))
                         period_start = None
                         period_end = None
+                        period_end_persisted_ms = None
             if period_start is not None:
-                late_periods.append((self.to_datetime(period_start), self.to_datetime(period_end)))
+                end_ms = period_end_persisted_ms if period_start == period_end else period_end
+                late_periods.append((self.to_datetime(period_start), self.to_datetime(end_ms)))
             self.data[request]['late_persistence_periods'] = late_periods
-            
+
             # LocalControl state
             self.data[request]['lc_states'] = {'all': {'times':[], 'values':[]}}
             ha_handles = [h for h in relays.keys() if h in ['auto.lc', 'auto.lc.n']]
