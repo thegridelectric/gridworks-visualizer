@@ -378,7 +378,7 @@ for i in range(len(flo_params_messages)-1):
 # ---------------------------------------------------
 # CSV output: hourly heat flows (actual vs expected)
 # ---------------------------------------------------
-csv_path = os.path.expanduser(f'~/Desktop/flo_report_{house_alias}.csv')
+csv_path = os.path.expanduser(f'~/Downloads/flo_report_{house_alias}.csv')
 with open(csv_path, 'w', newline='') as f:
     w = csv.writer(f)
     w.writerow(['Timestamp', 'H2S_A', 'H2S_E', 'H2B_A', 'H2B_E', 'H2H_A', 'H2H_E', 'HP_A', 'HP_E'])
@@ -411,7 +411,7 @@ print(f"CSV report saved as {csv_path}")
 # Part 3: Generate PDF report
 # ---------------------------------------------------
 
-pdf_path = os.path.expanduser(f'~/Desktop/flo_report_{house_alias}.pdf')
+pdf_path = os.path.expanduser(f'~/Downloads/flo_report_{house_alias}.pdf')
 if os.path.exists(pdf_path):
     os.remove(pdf_path)
 
