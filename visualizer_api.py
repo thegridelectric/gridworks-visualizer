@@ -291,10 +291,6 @@ class VisualizerApi():
                 x0=period_start, x1=period_end,
                 fillcolor="red", opacity=0.15,
                 layer="below", line_width=0,
-                annotation_text="Late persistence",
-                annotation_position="top left",
-                annotation_font_size=10,
-                annotation_font_color="red",
             )
     
     def reduce_data_size(self, channel_data, channel_name, max_timestamp):
