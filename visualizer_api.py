@@ -229,8 +229,8 @@ class VisualizerApi():
             'oil-boiler-pwr': 0.2*100, #kWx100
             'primary-flow': 0.1*100, #GPMx100
             'primary-pump-pwr': 0.3*10, #kWx100
-            'dist-swt': 0.2*1000, #degCx1000
-            'dist-rwt': 0.2*1000, #degCx1000
+            'dist-swt': 0.3*1000, #degCx1000
+            'dist-rwt': 0.3*1000, #degCx1000
             'dist-flow': 0.1*100, #GPMx100
             'dist-pump-pwr': 0.3*10, #Wx10
             'oat': 0.5*1000, #degCx1000
