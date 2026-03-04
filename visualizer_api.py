@@ -1,5 +1,6 @@
 import io
 import gc
+import json
 import keyword
 import os
 import csv
@@ -20,6 +21,7 @@ from typing import List, Optional, Union
 import asyncio
 import async_timeout
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.responses import FileResponse
@@ -1335,63 +1337,33 @@ class VisualizerApi():
                 #     zip_bids = await self.get_bids(request)
                 #     return zip_bids
                 
-                # Step 2: Plot generation
+                # Step 2: Plot generation (return JSON specs for client-side Plotly rendering)
                 plot_start = time.time()
                 print("Generating plots...")
-                zip_buffer = io.BytesIO()
-                with zipfile.ZipFile(zip_buffer, 'w') as zip_file:
-                    html_buffer = await self.plot_heatpump(request)
-                    zip_file.writestr('plot1.html', html_buffer.read())
-
-                    html_buffer = await self.plot_prices(request)
-                    zip_file.writestr('plot2.html', html_buffer.read())
-                    
-                    html_buffer = await self.plot_distribution(request)
-                    zip_file.writestr('plot3.html', html_buffer.read())
-                    
-                    html_buffer = await self.plot_heatcalls(request)
-                    zip_file.writestr('plot4.html', html_buffer.read())
-                    
-                    html_buffer = await self.plot_zones(request)
-                    zip_file.writestr('plot5.html', html_buffer.read())
-
-                    html_buffer = await self.plot_buffer(request)
-                    zip_file.writestr('plot6.html', html_buffer.read())
-                    
-                    html_buffer = await self.plot_storage(request)
-                    zip_file.writestr('plot7.html', html_buffer.read())
-                    
-                    html_buffer = await self.plot_top_state(request)
-                    zip_file.writestr('plot8.html', html_buffer.read())
-                    
-                    html_buffer = await self.plot_ha_state(request)
-                    zip_file.writestr('plot9.html', html_buffer.read())
-                    
-                    html_buffer = await self.plot_aa_state(request)
-                    zip_file.writestr('plot10.html', html_buffer.read())
-                    
-                    html_buffer = await self.plot_weather(request)
-                    zip_file.writestr('plot11.html', html_buffer.read())
+                plots = {}
+                plots['plot1'] = await self.plot_heatpump(request)
+                plots['plot2'] = await self.plot_prices(request)
+                plots['plot3'] = await self.plot_distribution(request)
+                plots['plot4'] = await self.plot_heatcalls(request)
+                plots['plot5'] = await self.plot_zones(request)
+                plots['plot6'] = await self.plot_buffer(request)
+                plots['plot7'] = await self.plot_storage(request)
+                plots['plot8'] = await self.plot_top_state(request)
+                plots['plot9'] = await self.plot_ha_state(request)
+                plots['plot10'] = await self.plot_aa_state(request)
+                plots['plot11'] = await self.plot_weather(request)
 
                 plot_time = time.time() - plot_start
                 print(f"- Time to generate all plots: {round(plot_time, 1)}s")
-                
-                # Step 3: Response preparation
-                zip_buffer.seek(0)
-                zip_size = len(zip_buffer.getvalue())
 
-                response = StreamingResponse(
-                    zip_buffer, 
-                    media_type='application/zip', 
-                    headers={"Content-Disposition": "attachment; filename=plots.zip"}
-                )
+                response_payload = json.dumps({"success": True, "plots": plots})
+                response_size = len(response_payload.encode('utf-8'))
+                print(f"Sent JSON plots ({round(response_size/1024/1024, 1)} MB)")
 
-                print(f"Sent zip file of size {round(zip_size/1024/1024, 1)} MB")
-                
                 total_time = time.time() - total_start
                 print(f"=== TOTAL TIME: {round(total_time, 1)}s ===\n")
 
-                return response
+                return JSONResponse(content={"success": True, "plots": plots})
                 
         except asyncio.TimeoutError:
             print("Timed out in get_plots()")
@@ -1404,6 +1376,14 @@ class VisualizerApi():
                 del self.data[request]
                 print(f"Deleted request data")
             print(f"Unfinished requests in data: {len(self.data)}")
+
+    def _fig_to_plot_spec(self, fig, config=None):
+        """Convert Plotly figure to JSON-serializable dict for client-side rendering."""
+        if config is None:
+            config = {'displayModeBar': False, 'staticPlot': False, 'responsive': True}
+        fig_dict = json.loads(fig.to_json())
+        fig_dict['config'] = config
+        return fig_dict
 
     async def plot_aggregate(self, request: BaseRequest):
         plot_start = time.time()
@@ -1677,17 +1657,10 @@ class VisualizerApi():
                 bgcolor='rgba(0, 0, 0, 0)'
                 )
             )
-        html_buffer = io.StringIO()
-        # Optimize Plotly output for smaller file size
-        fig.write_html(html_buffer, config={
-            'displayModeBar': False,
-            'staticPlot': False,
-            'responsive': True
-        }, include_plotlyjs='cdn')  # Use CDN instead of embedding Plotly.js
-        html_buffer.seek(0)
-        plot_size = len(html_buffer.getvalue())
-        print(f"Heat pump plot ({round(plot_size/1024/1024, 1)} MB) done in {round(time.time()-plot_start,1)} seconds")
-        return html_buffer
+        config = {'displayModeBar': False, 'staticPlot': False, 'responsive': True}
+        plot_spec = self._fig_to_plot_spec(fig, config)
+        print(f"Heat pump plot done in {round(time.time()-plot_start,1)} seconds")
+        return plot_spec
 
     async def plot_distribution(self, request: DataRequest):
         plot_start = time.time()
@@ -1806,16 +1779,10 @@ class VisualizerApi():
                 bgcolor='rgba(0, 0, 0, 0)'
                 )
             )
-        html_buffer = io.StringIO()
-        fig.write_html(html_buffer, config={
-            'displayModeBar': False,
-            'staticPlot': False,
-            'responsive': True
-        }, include_plotlyjs='cdn')
-        html_buffer.seek(0) 
-        plot_size = len(html_buffer.getvalue())
-        print(f"Distribution plot ({round(plot_size/1024/1024, 1)} MB) done in {round(time.time()-plot_start,1)} seconds")
-        return html_buffer
+        config = {'displayModeBar': False, 'staticPlot': False, 'responsive': True}
+        plot_spec = self._fig_to_plot_spec(fig, config)
+        print(f"Distribution plot done in {round(time.time()-plot_start,1)} seconds")
+        return plot_spec
     
     async def plot_heatcalls(self, request: DataRequest):
         def _plot_heatcalls_sync():
@@ -1948,16 +1915,10 @@ class VisualizerApi():
                     bgcolor='rgba(0, 0, 0, 0)'
                 )
             )
-            html_buffer = io.StringIO()
-            fig.write_html(html_buffer, config={
-                'displayModeBar': False,
-                'staticPlot': False,
-                'responsive': True
-            }, include_plotlyjs='cdn')
-            html_buffer.seek(0)
-            plot_size = len(html_buffer.getvalue())
-            print(f"Heat calls plot ({round(plot_size/1024/1024, 1)} MB) done in {round(time.time()-plot_start,1)} seconds")
-            return html_buffer
+            config = {'displayModeBar': False, 'staticPlot': False, 'responsive': True}
+            plot_spec = self._fig_to_plot_spec(fig, config)
+            print(f"Heat calls plot done in {round(time.time()-plot_start,1)} seconds")
+            return plot_spec
         
         try:
             # Run the CPU-bound work in a thread pool so timeout can interrupt it
@@ -2079,16 +2040,10 @@ class VisualizerApi():
                 bgcolor='rgba(0, 0, 0, 0)'
                 )
             )
-        html_buffer = io.StringIO()
-        fig.write_html(html_buffer, config={
-            'displayModeBar': False,
-            'staticPlot': False,
-            'responsive': True
-        }, include_plotlyjs='cdn')
-        html_buffer.seek(0)
-        plot_size = len(html_buffer.getvalue())
-        print(f"Zones plot ({round(plot_size/1024/1024, 1)} MB) done in {round(time.time()-plot_start,1)} seconds")
-        return html_buffer
+        config = {'displayModeBar': False, 'staticPlot': False, 'responsive': True}
+        plot_spec = self._fig_to_plot_spec(fig, config)
+        print(f"Zones plot done in {round(time.time()-plot_start,1)} seconds")
+        return plot_spec
     
     async def plot_buffer(self, request: DataRequest):
         plot_start = time.time()
@@ -2208,16 +2163,10 @@ class VisualizerApi():
                 )
             )
 
-        html_buffer = io.StringIO()
-        fig.write_html(html_buffer, config={
-            'displayModeBar': False,
-            'staticPlot': False,
-            'responsive': True
-        }, include_plotlyjs='cdn')
-        html_buffer.seek(0)
-        plot_size = len(html_buffer.getvalue())
-        print(f"Buffer plot ({round(plot_size/1024/1024, 1)} MB) done in {round(time.time()-plot_start,1)} seconds")
-        return html_buffer
+        config = {'displayModeBar': False, 'staticPlot': False, 'responsive': True}
+        plot_spec = self._fig_to_plot_spec(fig, config)
+        print(f"Buffer plot done in {round(time.time()-plot_start,1)} seconds")
+        return plot_spec
 
     async def plot_storage(self, request: DataRequest):
         plot_start = time.time()
@@ -2444,16 +2393,10 @@ class VisualizerApi():
             )
         )
 
-        html_buffer = io.StringIO()
-        fig.write_html(html_buffer, config={
-            'displayModeBar': False,
-            'staticPlot': False,
-            'responsive': True
-        }, include_plotlyjs='cdn')
-        html_buffer.seek(0)
-        plot_size = len(html_buffer.getvalue())
-        print(f"Storage plot ({round(plot_size/1024/1024, 1)} MB) done in {round(time.time()-plot_start,1)} seconds")
-        return html_buffer
+        config = {'displayModeBar': False, 'staticPlot': False, 'responsive': True}
+        plot_spec = self._fig_to_plot_spec(fig, config)
+        print(f"Storage plot done in {round(time.time()-plot_start,1)} seconds")
+        return plot_spec
     
     async def plot_top_state(self, request: DataRequest):
         plot_start = time.time()
@@ -2530,16 +2473,10 @@ class VisualizerApi():
             )
         )
         
-        html_buffer = io.StringIO()
-        fig.write_html(html_buffer, config={
-            'displayModeBar': False,
-            'staticPlot': False,
-            'responsive': True
-        }, include_plotlyjs='cdn')
-        html_buffer.seek(0)
-        plot_size = len(html_buffer.getvalue())
-        print(f"Top state plot ({round(plot_size/1024/1024, 1)} MB) done in {round(time.time()-plot_start,1)} seconds")
-        return html_buffer
+        config = {'displayModeBar': False, 'staticPlot': False, 'responsive': True}
+        plot_spec = self._fig_to_plot_spec(fig, config)
+        print(f"Top state plot done in {round(time.time()-plot_start,1)} seconds")
+        return plot_spec
     
     async def plot_ha_state(self, request: DataRequest):
         plot_start = time.time()
@@ -2625,16 +2562,10 @@ class VisualizerApi():
             )
         )
 
-        html_buffer = io.StringIO()
-        fig.write_html(html_buffer, config={
-            'displayModeBar': False,
-            'staticPlot': False,
-            'responsive': True
-        }, include_plotlyjs='cdn')
-        html_buffer.seek(0)
-        plot_size = len(html_buffer.getvalue())
-        print(f"HA state plot ({round(plot_size/1024/1024, 1)} MB) done in {round(time.time()-plot_start,1)} seconds")
-        return html_buffer
+        config = {'displayModeBar': False, 'staticPlot': False, 'responsive': True}
+        plot_spec = self._fig_to_plot_spec(fig, config)
+        print(f"HA state plot done in {round(time.time()-plot_start,1)} seconds")
+        return plot_spec
     
     async def plot_aa_state(self, request: DataRequest):
         plot_start = time.time()
@@ -2714,16 +2645,10 @@ class VisualizerApi():
             )
         )
 
-        html_buffer = io.StringIO()
-        fig.write_html(html_buffer, config={
-            'displayModeBar': False,
-            'staticPlot': False,
-            'responsive': True
-        }, include_plotlyjs='cdn')
-        html_buffer.seek(0)
-        plot_size = len(html_buffer.getvalue())
-        print(f"AA state plot ({round(plot_size/1024/1024, 1)} MB) done in {round(time.time()-plot_start,1)} seconds")
-        return html_buffer 
+        config = {'displayModeBar': False, 'staticPlot': False, 'responsive': True}
+        plot_spec = self._fig_to_plot_spec(fig, config)
+        print(f"AA state plot done in {round(time.time()-plot_start,1)} seconds")
+        return plot_spec 
 
     async def plot_weather(self, request: DataRequest):
         plot_start = time.time()
@@ -2789,16 +2714,10 @@ class VisualizerApi():
             )
         )
 
-        html_buffer = io.StringIO()
-        fig.write_html(html_buffer, config={
-            'displayModeBar': False,
-            'staticPlot': False,
-            'responsive': True
-        }, include_plotlyjs='cdn')
-        html_buffer.seek(0)
-        plot_size = len(html_buffer.getvalue())
-        print(f"Weather plot ({round(plot_size/1024/1024, 1)} MB) done in {round(time.time()-plot_start,1)} seconds")
-        return html_buffer
+        config = {'displayModeBar': False, 'staticPlot': False, 'responsive': True}
+        plot_spec = self._fig_to_plot_spec(fig, config)
+        print(f"Weather plot done in {round(time.time()-plot_start,1)} seconds")
+        return plot_spec
     
     async def plot_prices(self, request: Union[DataRequest, BaseRequest], aggregate=False):
         if not isinstance(request, DataRequest) and not aggregate:
@@ -2925,15 +2844,18 @@ class VisualizerApi():
             )
         )
 
-        html_buffer = io.StringIO()
-        fig.write_html(html_buffer, config={
-            'displayModeBar': False,
-            'staticPlot': False,
-            'responsive': True
-        }, include_plotlyjs='cdn')
-        html_buffer.seek(0)
-        print(f"Prices plot done in {round(time.time()-plot_start,1)} seconds")   
-        return html_buffer             
+        config = {'displayModeBar': False, 'staticPlot': False, 'responsive': True}
+        print(f"Prices plot done in {round(time.time()-plot_start,1)} seconds")
+
+        # Keep aggregate endpoints backward-compatible (they still zip HTML plots).
+        if aggregate:
+            html_buffer = io.StringIO()
+            fig.write_html(html_buffer, config=config, include_plotlyjs='cdn')
+            html_buffer.seek(0)
+            return html_buffer
+
+        plot_spec = self._fig_to_plot_spec(fig, config)
+        return plot_spec             
 
     async def login(self, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
         user = db.execute(users.select().where(users.c.username == form_data.username)).first()
