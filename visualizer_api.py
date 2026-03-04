@@ -1366,14 +1366,18 @@ class VisualizerApi():
                 plot_time = time.time() - plot_start
                 print(f"- Time to generate all plots: {round(plot_time, 1)}s")
 
-                response_payload = json.dumps({"success": True, "plots": plots})
-                response_size = len(response_payload.encode('utf-8'))
-                print(f"Sent JSON plots ({round(response_size/1024/1024, 1)} MB)")
+                response = JSONResponse(content={"success": True, "plots": plots})
+                content_length = response.headers.get("content-length")
+                if content_length:
+                    response_size_mb = int(content_length) / 1024 / 1024
+                    print(f"Sent JSON plots ({round(response_size_mb, 1)} MB)")
+                else:
+                    print("Sent JSON plots")
 
                 total_time = time.time() - total_start
                 print(f"=== TOTAL TIME: {round(total_time, 1)}s ===\n")
 
-                return JSONResponse(content={"success": True, "plots": plots})
+                return response
                 
         except asyncio.TimeoutError:
             print("Timed out in get_plots()")
