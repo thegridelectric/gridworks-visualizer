@@ -23,6 +23,7 @@ import async_timeout
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -257,6 +258,8 @@ class VisualizerApi():
             allow_headers=["*"],
             expose_headers=["*"]
         )
+        # Compress large JSON payloads (e.g. /plots) when the client supports gzip.
+        self.app.add_middleware(GZipMiddleware, minimum_size=1000)
         self.app.post("/login", response_model=Token)(self.login)
         self.app.post("/logout")(self.logout)
         self.app.get("/google-maps-api-key")(self.get_google_maps_api_key)
