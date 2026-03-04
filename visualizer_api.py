@@ -1793,77 +1793,94 @@ class VisualizerApi():
             plot_start = time.time()
             fig = go.Figure()
             if 'zone-heat-calls' in request.selected_channels:
+                show_points = 'show-points' in request.selected_channels
+                threshold = self.whitewire_threshold_watts.get(
+                    request.house_alias, self.whitewire_threshold_watts['default']
+                )
                 for zone in self.data[request]['channels_by_zone']:
                     if 'whitewire' not in self.data[request]['channels_by_zone'][zone]:
                         continue
                     whitewire_ch = self.data[request]['channels_by_zone'][zone]['whitewire']
                     zone_number = int(whitewire_ch[4])
                     zone_color = self.zone_color[zone_number-1]
-                    # Interpret whitewire readings as active or not based on threshold
-                    if request.house_alias in self.whitewire_threshold_watts:
-                        threshold = self.whitewire_threshold_watts[request.house_alias]
-                    else:
-                        threshold = self.whitewire_threshold_watts['default']
-                    self.data[request]['channels'][whitewire_ch]['values'] = [
-                        int(abs(x)>threshold) for x in self.data[request]['channels'][whitewire_ch]['values']
-                        ]
                     ww_times = self.data[request]['channels'][whitewire_ch]['times']
-                    ww_values = self.data[request]['channels'][whitewire_ch]['values']            
-                    # Plot heat calls as periods
-                    last_was_1 = False
-                    heatcall_period_start = None
-                    for i in range(len(ww_values)):
-                        if ww_values[i] == 1:
-                            # Start a heat call period
-                            if not last_was_1 or 'show-points' in request.selected_channels and i>0: 
-                                fig.add_trace(
-                                    go.Scatter(
-                                        x=[ww_times[i], ww_times[i]],
-                                        y=[zone_number-1, zone_number],
-                                        mode='lines',
-                                        line=dict(color=zone_color, width=2),
-                                        opacity=0.7,
-                                        name=self.data[request]['channels_by_zone'][zone]['whitewire'].replace('-whitewire',''),
-                                        showlegend=False,
-                                        hovertemplate="%{x|%H:%M:%S}<extra></extra>"
-                                    )
-                                )
-                            if i >= len(ww_values)-1:
-                                continue
-                            if not heatcall_period_start:
-                                heatcall_period_start = ww_times[i]
-                            if ww_values[i+1] != 1:
-                                # End a heat call period
-                                fig.add_trace(
-                                    go.Scatter(
-                                        x=[ww_times[i+1], ww_times[i+1]],
-                                        y=[zone_number-1, zone_number],
-                                        mode='lines',
-                                        line=dict(color=zone_color, width=2),
-                                        opacity=0.7,
-                                        name=self.data[request]['channels_by_zone'][zone]['whitewire'].replace('-whitewire',''),
-                                        showlegend=False,
-                                        hovertemplate="%{x|%H:%M:%S}<extra></extra>"
-                                    )
-                                )
-                            if ww_values[i+1] != 1 or i+1==len(ww_values)-1:
-                                # Add shading between heat call period start and end
-                                if heatcall_period_start:
-                                    fig.add_shape(
-                                        type='rect',
-                                        x0=heatcall_period_start,
-                                        y0=zone_number - 1,
-                                        x1=ww_times[i+1],
-                                        y1=zone_number,
-                                        line=dict(color=zone_color, width=0),
-                                        fillcolor=zone_color,
-                                        opacity=0.2,
-                                        name=self.data[request]['channels_by_zone'][zone]['whitewire'].replace('-whitewire', ''),
-                                    )
-                                    heatcall_period_start = None
-                            last_was_1 = True
-                        else:
-                            last_was_1 = False
+                    ww_values = self.data[request]['channels'][whitewire_ch]['values']
+                    if not ww_values or not ww_times:
+                        continue
+
+                    # Vectorized active/inactive computation.
+                    active = np.abs(np.asarray(ww_values)) > threshold
+                    if not np.any(active):
+                        # Keep legend entry consistent even when no active period exists.
+                        fig.add_trace(
+                            go.Scatter(
+                                x=[None],
+                                y=[None],
+                                mode='lines',
+                                line=dict(color=zone_color, width=2),
+                                name=self.data[request]['channels_by_zone'][zone]['whitewire'].replace('-whitewire', '')
+                            )
+                        )
+                        continue
+
+                    # Detect active intervals [start_idx, end_idx] where end_idx is inclusive.
+                    starts = np.where(active & np.concatenate(([True], ~active[:-1])))[0]
+                    ends = np.where(active & np.concatenate((~active[1:], [True])))[0]
+                    end_time_idx = np.minimum(ends + 1, len(ww_times) - 1)
+
+                    # One filled polygon trace per zone (instead of one shape per interval).
+                    fill_x, fill_y = [], []
+                    # Vertical boundaries for each interval start/end in a single trace.
+                    edge_x, edge_y = [], []
+                    for s_idx, e_time_idx in zip(starts, end_time_idx):
+                        x0 = ww_times[s_idx]
+                        x1 = ww_times[e_time_idx]
+
+                        fill_x.extend([x0, x0, x1, x1, None])
+                        fill_y.extend([zone_number - 1, zone_number, zone_number, zone_number - 1, None])
+
+                        edge_x.extend([x0, x0, None, x1, x1, None])
+                        edge_y.extend([zone_number - 1, zone_number, None, zone_number - 1, zone_number, None])
+
+                    fig.add_trace(
+                        go.Scatter(
+                            x=fill_x,
+                            y=fill_y,
+                            mode='lines',
+                            fill='toself',
+                            line=dict(color=zone_color, width=0),
+                            fillcolor=zone_color,
+                            opacity=0.2,
+                            showlegend=False,
+                            hoverinfo='skip'
+                        )
+                    )
+                    fig.add_trace(
+                        go.Scatter(
+                            x=edge_x,
+                            y=edge_y,
+                            mode='lines',
+                            line=dict(color=zone_color, width=2),
+                            opacity=0.7,
+                            showlegend=False,
+                            hovertemplate="%{x|%H:%M:%S}<extra></extra>"
+                        )
+                    )
+
+                    # Optional point markers without creating thousands of tiny traces.
+                    if show_points:
+                        active_idx = np.where(active)[0]
+                        fig.add_trace(
+                            go.Scatter(
+                                x=[ww_times[i] for i in active_idx],
+                                y=[zone_number - 0.5] * len(active_idx),
+                                mode='markers',
+                                marker=dict(size=4, color=zone_color, opacity=0.6),
+                                showlegend=False,
+                                hovertemplate="%{x|%H:%M:%S}<extra></extra>"
+                            )
+                        )
+
                     fig.add_trace(
                         go.Scatter(
                             x=[None], 
@@ -1931,7 +1948,7 @@ class VisualizerApi():
                 timeout=15
             )
         except asyncio.TimeoutError:
-            print(f"Heat calls plot timed out after 3 seconds")
+            print(f"Heat calls plot timed out after 15 seconds")
             html_buffer = io.StringIO()
             html_buffer.write('<html><body><p style="font-family: Arial; color: red;">Heat call plot generation timed out</p></body></html>')
             html_buffer.seek(0)
