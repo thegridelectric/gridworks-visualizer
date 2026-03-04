@@ -234,14 +234,16 @@ class VisualizerApi():
             'dist-flow': 0.1*100, #GPMx100
             'dist-pump-pwr': 0.3*10, #Wx10
             'oat': 0.5*1000, #degCx1000
-            'buffer-depths': 0.2*1000, #degCx1000
-            'tank-depths': 0.2*1000, #degCx1000
+            'buffer-depths': 0.2*100, #degFx100
+            'tank-depths': 0.2*100, #degFx100
             'buffer-hot-pipe': 0.2*1000, #degCx1000
             'buffer-cold-pipe': 0.2*1000, #degCx1000
             'store-hot-pipe': 0.2*1000, #degCx1000
             'store-cold-pipe': 0.2*1000, #degCx1000
             'store-flow': 0.1*100, #GPMx100
             'store-pump-pwr': 1*10, #kWx100
+            'zone-temp': 0.5*1000, #degFx1000
+            'zone-set': 0.5*1000, #degFx1000
             'zone': 0,
         }
         self.data = {}
@@ -307,7 +309,12 @@ class VisualizerApi():
         if 'tank' in channel_name and 'depth' in channel_name and 'micro' not in channel_name and 'device' not in channel_name:
             channel_name = 'tank-depths'
         if 'zone' in channel_name:
-            channel_name = 'zone'
+            if '-temp' in channel_name:
+                channel_name = 'zone-temp'
+            elif '-set' in channel_name:
+                channel_name = 'zone-set'
+            else:
+                channel_name = 'zone'
 
         if channel_name not in self.threshold_per_channel or not channel_data['values'] or len(channel_data['values']) < 2:
             return channel_data
@@ -1515,7 +1522,7 @@ class VisualizerApi():
                     y=[self.to_fahrenheit(x/1000) for x in self.data[request]['channels']['hp-lwt']['values']], 
                     mode='lines+markers' if 'show-points'in request.selected_channels else 'lines',
                     opacity=0.7,
-                    line=dict(color='#d62728', dash='solid', shape='hv'),
+                    line=dict(color='#d62728', dash='solid'),
                     name='HP LWT',
                     hovertemplate="%{x|%H:%M:%S} | %{y:.1f}°F<extra></extra>"
                     )
@@ -1528,7 +1535,7 @@ class VisualizerApi():
                     y=[self.to_fahrenheit(x/1000) for x in self.data[request]['channels']['hp-ewt']['values']], 
                     mode='lines+markers' if 'show-points'in request.selected_channels else 'lines', 
                     opacity=0.7,
-                    line=dict(color='#1f77b4', dash='solid', shape='hv'),
+                    line=dict(color='#1f77b4', dash='solid'),
                     name='HP EWT',
                     hovertemplate="%{x|%H:%M:%S} | %{y:.1f}°F<extra></extra>"
                     )
@@ -1678,7 +1685,7 @@ class VisualizerApi():
                     y=[self.to_fahrenheit(x/1000) for x in self.data[request]['channels']['dist-swt']['values']], 
                     mode='lines+markers' if 'show-points'in request.selected_channels else 'lines', 
                     opacity=0.7,
-                    line=dict(color='#d62728', dash='solid', shape='hv'),
+                    line=dict(color='#d62728', dash='solid'),
                     name='Distribution SWT',
                     hovertemplate="%{x|%H:%M:%S} | %{y:.1f}°F<extra></extra>"
                     )
@@ -1691,7 +1698,7 @@ class VisualizerApi():
                     y=[self.to_fahrenheit(x/1000) for x in self.data[request]['channels']['dist-rwt']['values']], 
                     mode='lines+markers' if 'show-points'in request.selected_channels else 'lines', 
                     opacity=0.7,
-                    line=dict(color='#1f77b4', dash='solid', shape='hv'),
+                    line=dict(color='#1f77b4', dash='solid'),
                     name='Distribution RWT',
                     hovertemplate="%{x|%H:%M:%S} | %{y:.1f}°F<extra></extra>"
                     )
@@ -1969,7 +1976,7 @@ class VisualizerApi():
                         y=[x/1000 for x in self.data[request]['channels'][temp_channel]['values']], 
                         mode='lines+markers' if 'show-points'in request.selected_channels else 'lines', 
                         opacity=0.7,
-                        line=dict(color=self.zone_color[int(zone[4])-1], dash='solid'),
+                        line=dict(color=self.zone_color[int(zone[4])-1], dash='solid', shape='hv'),
                         name=self.data[request]['channels_by_zone'][zone]['temp'].replace('-temp',''),
                         hovertemplate="%{x|%H:%M:%S} | %{y:.1f}°F<extra></extra>"
                         )
@@ -1984,7 +1991,7 @@ class VisualizerApi():
                         y=[x/1000 for x in self.data[request]['channels'][set_channel]['values']], 
                         mode='lines+markers' if 'show-points'in request.selected_channels else 'lines', 
                         opacity=0.7,
-                        line=dict(color=self.zone_color[int(zone[4])-1], dash='dash'),
+                        line=dict(color=self.zone_color[int(zone[4])-1], dash='dash', shape='hv'),
                         name=self.data[request]['channels_by_zone'][zone]['set'].replace('-set',''),
                         showlegend=False,
                         hovertemplate="%{x|%H:%M:%S} | %{y:.1f}°F<extra></extra>"
@@ -2098,7 +2105,7 @@ class VisualizerApi():
                         mode='lines+markers' if 'show-points'in request.selected_channels else 'lines', 
                         opacity=0.7,
                         name=buffer_channel.replace('buffer-',''),
-                        line=dict(color=buffer_layer_color, dash='solid', shape='hv'),
+                        line=dict(color=buffer_layer_color, dash='solid'),
                         hovertemplate="%{x|%H:%M:%S} | %{y:.1f}°F<extra></extra>"
                         )
                     )  
@@ -2112,7 +2119,7 @@ class VisualizerApi():
                         mode='lines+markers' if 'show-points'in request.selected_channels else 'lines', 
                         opacity=0.7,
                         name=buffer_channel.replace('buffer-',''),
-                        line=dict(color=buffer_layer_color, dash='solid', shape='hv'),
+                        line=dict(color=buffer_layer_color, dash='solid'),
                         hovertemplate="%{x|%H:%M:%S} | %{y:.1f}°F<extra></extra>"
                         )
                     )  
@@ -2231,7 +2238,7 @@ class VisualizerApi():
                         y=[x/100 for x in self.data[request]['channels'][tank_channel]['values']], 
                         mode='lines+markers' if 'show-points'in request.selected_channels else 'lines', opacity=0.7,
                         name=tank_channel.replace('storage-',''),
-                        line=dict(color=tank_layer_color, dash='solid', shape='hv'),
+                        line=dict(color=tank_layer_color, dash='solid'),
                         hovertemplate="%{x|%H:%M:%S} | %{y:.1f}°F"
                         )
                     )
@@ -2244,7 +2251,7 @@ class VisualizerApi():
                             y=[self.to_fahrenheit(x/1000) for x in self.data[request]['channels'][tank_channel]['values']], 
                             mode='lines+markers' if 'show-points'in request.selected_channels else 'lines', opacity=0.7,
                             name=tank_channel.replace('storage-',''),
-                            line=dict(color=tank_layer_color, dash='solid', shape='hv'),
+                            line=dict(color=tank_layer_color, dash='solid'),
                             hovertemplate="%{x|%H:%M:%S} | %{y:.1f}°F"
                             )
                         )
@@ -2754,6 +2761,7 @@ class VisualizerApi():
         }
         
         try:
+            price_service_start = time.time()
             print(f"Getting prices from price service...")
             async with httpx.AsyncClient() as client:
                 response = await client.post("https://price-service.electricity.works/get_prices_visualizer/hw1-isone-me-versant-keene-ps/gw0-price-forecast", json=price_request)
@@ -2761,7 +2769,7 @@ class VisualizerApi():
                 data = response.json()
                 lmp_values = data['LmpList']
                 dist_values = data['DistList']
-                print(f"Prices received from price service")
+                print(f"Prices received from price service ({round(time.time()-price_service_start, 1)}s)")
         except Exception as e:
             print(f"Error getting prices from price service: {e}")
             lmp_values = []
