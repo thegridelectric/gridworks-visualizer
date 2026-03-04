@@ -516,7 +516,8 @@ class VisualizerApi():
             self.data[request]['min_timestamp'] = self.to_datetime(min_timestamp)
             self.data[request]['max_timestamp'] = self.to_datetime(max_timestamp)
 
-            # Sort values according to time and convert to datetime
+            # Sort values according to time. Keep epoch ms for plot requests
+            # to avoid expensive per-point Python datetime conversion.
             total_conversion_time = 0
             for channel_name in self.data[request]['channels'].keys():
                 sorted_times_values = sorted(zip(self.data[request]['channels'][channel_name]['times'], self.data[request]['channels'][channel_name]['values']))
@@ -532,14 +533,19 @@ class VisualizerApi():
                         true_max_timestamp
                     )  
 
-                # Convert timestamps to datetime (optimized)
-                if not isinstance(request, CsvRequest) or CSV_SAMPLING:
+                # Convert to datetime only for CSV sampling logic.
+                if isinstance(request, CsvRequest) and CSV_SAMPLING:
                     conversion_start = time.time()
-                    tz = pytz.timezone(self.timezone_str)
-                    self.data[request]['channels'][channel_name]['times'] = [
-                        datetime.fromtimestamp(ts/1000, tz=tz).replace(tzinfo=None)
-                        for ts in self.data[request]['channels'][channel_name]['times']
-                    ]
+                    self.data[request]['channels'][channel_name]['times'] = (
+                        pd.to_datetime(
+                            self.data[request]['channels'][channel_name]['times'],
+                            unit='ms',
+                            utc=True
+                        )
+                        .tz_convert(self.timezone_str)
+                        .tz_localize(None)
+                        .tolist()
+                    )
                     total_conversion_time += time.time() - conversion_start
                 
             print(f"- Time to convert timestamps to datetime: {round(total_conversion_time, 1)}s")    
@@ -571,7 +577,7 @@ class VisualizerApi():
                     state_machine_handle = str(state['MachineHandle']).replace('auto.h', 'auto.lc').replace('a.aa', 'ltn.la')
                     if state_machine_handle not in relays:
                         relays[state_machine_handle] = {'times': [], 'values': []}
-                    relays[state_machine_handle]['times'].extend([self.to_datetime(x) for x in state['UnixMsList']])
+                    relays[state_machine_handle]['times'].extend(state['UnixMsList'])
                     relays[state_machine_handle]['values'].extend(state['StateList'])
 
             # Top state
