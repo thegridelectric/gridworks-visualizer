@@ -228,11 +228,11 @@ class VisualizerApi():
             'hp-idu-pwr': 0.1*1000, #kWx1000
             'oil-boiler-pwr': 0.2*100, #kWx100
             'primary-flow': 0.1*100, #GPMx100
-            'primary-pump-pwr': 0.1*10, #kWx100
+            'primary-pump-pwr': 0.3*10, #kWx100
             'dist-swt': 0.2*1000, #degCx1000
             'dist-rwt': 0.2*1000, #degCx1000
             'dist-flow': 0.1*100, #GPMx100
-            'dist-pump-pwr': 0.1*10, #Wx10
+            'dist-pump-pwr': 0.3*10, #Wx10
             'oat': 0.5*1000, #degCx1000
             'buffer-depths': 0.2*1000, #degCx1000
             'tank-depths': 0.2*1000, #degCx1000
@@ -241,7 +241,7 @@ class VisualizerApi():
             'store-hot-pipe': 0.2*1000, #degCx1000
             'store-cold-pipe': 0.2*1000, #degCx1000
             'store-flow': 0.1*100, #GPMx100
-            'store-pump-pwr': 0.1*10, #kWx100
+            'store-pump-pwr': 1*10, #kWx100
             'zone': 0,
         }
         self.data = {}
