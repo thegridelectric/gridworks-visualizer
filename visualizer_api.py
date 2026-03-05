@@ -227,7 +227,7 @@ class VisualizerApi():
             'hp-odu-pwr': 0.1*1000, #kWx1000
             'hp-idu-pwr': 0.1*1000, #kWx1000
             'oil-boiler-pwr': 0.2*100, #kWx100
-            'primary-flow': 0.1*100, #GPMx100
+            'primary-flow': 0.3*100, #GPMx100
             'primary-pump-pwr': 0.3*10, #kWx100
             'dist-swt': 1*1000, #degCx1000
             'dist-rwt': 1*1000, #degCx1000
@@ -547,9 +547,8 @@ class VisualizerApi():
                         .tolist()
                     )
                     total_conversion_time += time.time() - conversion_start
-                
-            print(f"- Time to convert timestamps to datetime: {round(total_conversion_time, 1)}s")    
-            # print(f"Time spent reducing data size: {round(self.time_spent_reducing_data, 1)} seconds")
+                    print(f"- Time to convert timestamps to datetime: {round(total_conversion_time, 1)}s")    
+            print(f"Time spent reducing data size: {round(self.time_spent_reducing_data, 1)} seconds")
             self.time_spent_reducing_data = 0
 
             # Find all zone channels
@@ -1742,7 +1741,7 @@ class VisualizerApi():
                     line=dict(color='pink', dash='solid', shape='hv'),
                     name='Distribution pump power /10',
                     yaxis = y_axis_power,
-                    # visible='legendonly',
+                    visible='legendonly',
                     hovertemplate="%{x|%H:%M:%S} | %{y:.1f}*10 W<extra></extra>"
                     )
                 )
@@ -2310,7 +2309,7 @@ class VisualizerApi():
                     line=dict(color='pink', dash='solid', shape='hv'),
                     name='Storage pump power x1000',
                     yaxis=y_axis_power,
-                    # visible='legendonly',
+                    visible='legendonly',
                     hovertemplate="%{x|%H:%M:%S} | %{y:.1f}/1000 kW<extra></extra>"
                     )
                 )
