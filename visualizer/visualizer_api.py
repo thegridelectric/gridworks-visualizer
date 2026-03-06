@@ -2,7 +2,6 @@ import io
 import gc
 import json
 import os
-import csv
 import time
 import uuid
 import pytz
@@ -76,7 +75,7 @@ class CsvRequest(DataRequest):
 class MessagesRequest(DataRequest):
     selected_message_types: List[str]
 
-class DijkstraRequest(BaseRequest):
+class FloRequest(BaseRequest):
     time_ms: int
 
 class ElectricityUseRequest(BaseModel):
@@ -326,14 +325,13 @@ class VisualizerApi():
                 
         reduced_times = [channel_data['times'][0]]
         reduced_values = [channel_data['values'][0]]
-
         for i in range(1, len(channel_data['values'])):
             if abs(channel_data['values'][i] - reduced_values[-1]) >= self.threshold_per_channel[channel_name]:
                 reduced_times.append(channel_data['times'][i])
                 reduced_values.append(channel_data['values'][i])
-        
         reduced_times.append(channel_data['times'][-1])
         reduced_values.append(channel_data['values'][-1])
+        
         # reduced_times.append(max_timestamp)
         # reduced_values.append(reduced_values[-1])
         return {'times': reduced_times, 'values': reduced_values}
@@ -920,7 +918,7 @@ class VisualizerApi():
                 print(f"Deleted request data")
             print(f"Unfinished requests in data: {len(self.data)}")
         
-    async def get_flo(self, request: DijkstraRequest):
+    async def get_flo(self, request: FloRequest):
         try:
             async with async_timeout.timeout(self.timeout_seconds):
                 print("Finding latest FLO run...")
@@ -942,7 +940,7 @@ class VisualizerApi():
                     return
                 print(f"Found FLO run at {self.to_datetime(flo_params_msg.message_persisted_ms)}")
 
-                print("Running Dijkstra and saving analysis to excel...")
+                print("Running FLO and saving analysis to excel...")
                 flo_params = FloParamsHouse0(**flo_params_msg.payload)
                 g = Flo(flo_params.to_bytes())
                 g.solve_dijkstra()
