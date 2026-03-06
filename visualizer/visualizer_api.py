@@ -26,8 +26,8 @@ from fastapi.responses import StreamingResponse
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy import asc, or_, and_, desc, cast
-from sqlalchemy import create_engine, MetaData, Table, select, Column, String, JSON, Integer, BigInteger
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import create_engine, MetaData, Table, select, BigInteger
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy import create_engine, MetaData, Table
 from sqlalchemy.future import select
@@ -94,14 +94,12 @@ class TokenData(BaseModel):
 
 class User(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    
     username: str
     email: Optional[str] = None
     is_active: Optional[bool] = None
 
 class House(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    
     short_alias: Optional[str] = None
     address: Optional[dict] = None
     primary_contact: Optional[dict] = None
@@ -114,10 +112,6 @@ class House(BaseModel):
     scada_ip_address: str
     scada_git_commit: str
     house_parameters: Optional[dict] = None
-
-class AlertReactionRequest(BaseModel):
-    house_alias: str
-    new_status: str
 
 class ScadaUpdateRequest(BaseModel):
     selected_short_aliases: List[str]
@@ -187,7 +181,6 @@ async def get_current_user(token: str = Depends(gbo_oauth2_scheme), db: Session 
     return user
 
 
-
 class VisualizerApi():
     def __init__(self):
         self.settings = Settings(_env_file=dotenv.find_dotenv())
@@ -231,8 +224,8 @@ class VisualizerApi():
             'zone-set': 0.5*1000, #degFx1000
             'zone': 0,
         }
-        self.data = {}
-        self.timestamp_min_max = {}
+        self.data: dict[BaseRequest, dict] = {}
+        self.timestamp_min_max: dict[BaseRequest, dict[str, datetime]] = {}
         print(f"Running API {'locally' if self.running_locally else 'on EC2'}")
 
     def start(self):
@@ -250,16 +243,14 @@ class VisualizerApi():
         self.app.post("/login", response_model=Token)(self.login)
         self.app.post("/logout")(self.logout)
         self.app.get("/google-maps-api-key")(self.get_google_maps_api_key)
-        self.app.get("/me", response_model=User)(self.read_users_me)
+        self.app.get("/me", response_model=User)(self.read_current_user)
         self.app.get("/homes", response_model=list[House])(self.get_homes)
         self.app.post("/electricity-use")(self.get_electricity_use)
         self.app.post("/electricity-use-csv")(self.get_electricity_use_csv)
-        self.app.post("/alert-reaction")(self.receive_alert_reaction)
         self.app.post("/plots")(self.get_plots)
         self.app.post("/csv")(self.get_csv)
         self.app.post("/messages")(self.get_messages)
         self.app.post("/flo")(self.get_flo)
-        self.app.post("/aggregate-plot")(self.get_aggregate_plot)
         self.app.post("/prices")(self.receive_prices)
         self.app.post("/update-scada-code")(self.update_scada_code)
         uvicorn.run(self.app, host="0.0.0.0", port=8000)
@@ -277,7 +268,40 @@ class VisualizerApi():
         r, g, b, a = (int(c * 255) for c in rgba)
         return f'#{r:02x}{g:02x}{b:02x}'
 
-    def add_internet_down_highlights(self, fig, request):
+    async def login(self, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+        user = db.execute(users.select().where(users.c.username == form_data.username)).first()
+        if not user or not verify_password(form_data.password, user.hashed_password):
+            raise HTTPException(
+                status_code=401,
+                detail="Incorrect username or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        access_token_expires = timedelta(minutes=gbo_access_token_expire_minutes)
+        access_token = create_access_token(
+            data={"sub": user.username}, expires_delta=access_token_expires
+        )
+        
+        # Update last login with timezone-aware datetime
+        db.execute(
+            users.update().where(users.c.username == user.username).values(
+                last_login=datetime.now(timezone.utc)
+            )
+        )
+        db.commit()
+        
+        return {"access_token": access_token, "token_type": "bearer"}
+
+    async def logout(self, current_user = Depends(get_current_user)):
+        return {"message": "Successfully logged out"}
+
+    async def read_current_user(self, current_user = Depends(get_current_user)):
+        return current_user
+
+    async def get_google_maps_api_key(self, current_user = Depends(get_current_user)):
+        return {"api_key": settings.google_maps_api_key.get_secret_value()}
+
+    def add_internet_down_highlights(self, fig: go.Figure, request: BaseRequest):
         for period_start, period_end in self.data[request].get('late_persistence_periods', []):
             fig.add_vrect(
                 x0=period_start, x1=period_end,
@@ -286,9 +310,6 @@ class VisualizerApi():
             )
     
     def reduce_data_size(self, channel_data, channel_name, max_timestamp):
-
-        start_time_reduction = time.time()
-
         if 'buffer-depth' in channel_name and 'micro' not in channel_name and 'device' not in channel_name:
             channel_name = 'buffer-depths'
         if 'tank' in channel_name and 'depth' in channel_name and 'micro' not in channel_name and 'device' not in channel_name:
@@ -316,23 +337,9 @@ class VisualizerApi():
         reduced_values.append(channel_data['values'][-1])
         # reduced_times.append(max_timestamp)
         # reduced_values.append(reduced_values[-1])
-        
-        # print(f"{channel_name} reduction: {len(channel_data['values'])} -> {len(reduced_values)} points ({len(reduced_values)/len(channel_data['values'])*100:.1f}% kept)")
-        self.time_spent_reducing_data += time.time() - start_time_reduction
-
         return {'times': reduced_times, 'values': reduced_values}
-
-    def check_password(self, request: BaseRequest):
-        if request.password == self.admin_user_password:
-            return True
-        house_owner_password = getattr(self.settings, f"{request.house_alias}_owner_password", None)
-        if house_owner_password:
-            house_owner_password.get_secret_value()
-            if request.password == house_owner_password:
-                return True
-        return False
     
-    def check_request(self, request: BaseRequest, aggregate=False):
+    def check_request(self, request: BaseRequest):
         if not self.running_locally: 
             MAX_PLOT_DAYS = 3
             MAX_CSV_DAYS = 2
@@ -342,10 +349,6 @@ class VisualizerApi():
                 if (request.end_ms-request.start_ms)/1000/3600/24 > MAX_PLOT_DAYS:
                     warning_message = f"Plotting data from more than {MAX_PLOT_DAYS} days is not permitted to prevent the visualizer EC2 instance from crashing."
                     warning_message += "\n\nPlease reduce the query time range, or consider running the visualizer API locally for larger queries."
-                    return {"success": False, "message": warning_message, "reload": False}
-                if aggregate and (request.end_ms-request.start_ms)/1000/3600/24 > MAX_PLOT_DAYS:
-                    warning_message = f"Plotting data from more than {MAX_PLOT_DAYS} days is not permitted to prevent the visualizer EC2 instance from crashing."
-                    warning_message += "Please reduce the query time range, or consider running locally for larger queries."
                     return {"success": False, "message": warning_message, "reload": False}
             
             # Max CSV download time range
@@ -365,41 +368,6 @@ class VisualizerApi():
         #             warning_message = f"That's a lot of data! Are you sure you want to proceed?"
         #             return {"success": False, "message": warning_message, "reload": False, "confirm_with_user": True}
         return None
-    
-    async def receive_prices(self, request: Prices):
-        '''function used only with aggregator page'''
-        try:
-            rows = []
-            project_dir = os.path.dirname(os.path.abspath(__file__))
-            elec_file = os.path.join(project_dir, 'data/price_forecast_dates.csv')
-            with open(elec_file, mode='r', newline='') as file:
-                reader = csv.reader(file)
-                header = next(reader)
-                rows = list(reader)
-
-            updated_prices = {float(timestamp): (lmp, dist) 
-                            for timestamp, lmp, dist in zip(request.unix_s, request.lmp, request.dist)}
-
-            # Update the rows based on the new prices
-            for row in rows:
-                try:
-                    unix_timestamp = float(row[0])
-                    if unix_timestamp in updated_prices:
-                        lmp, dist = updated_prices[unix_timestamp]
-                        row[1] = dist
-                        row[2] = lmp
-                except Exception as e:
-                    print(f"Error processing row {row}: {e}")
-                    continue
-
-            with open(elec_file, mode='w', newline='') as file:
-                writer = csv.writer(file)
-                writer.writerow(header)
-                writer.writerows(rows)
-            print(f"Prices updated successfully in {elec_file}")
-
-        except Exception as e:
-            print(f"Error updating prices: {e}")
 
     async def get_data(self, request: BaseRequest):
         try:
@@ -533,8 +501,6 @@ class VisualizerApi():
                     )
                     total_conversion_time += time.time() - conversion_start
                     print(f"- Time to convert timestamps to datetime: {round(total_conversion_time, 1)}s")    
-            print(f"Time spent reducing data size: {round(self.time_spent_reducing_data, 1)} seconds")
-            self.time_spent_reducing_data = 0
 
             # Find all zone channels
             self.data[request]['channels_by_zone'] = {}
@@ -690,164 +656,6 @@ class VisualizerApi():
         except Exception as e:
             print(f"An error occurred in get_data():\n{traceback.format_exc()}")
             return {"success": False, "message": "An error occurred when getting data", "reload": False}
-        
-    async def get_aggregate_data(self, request: DataRequest):
-        try:
-            error = self.check_request(request, aggregate=True)
-            if error:
-                print(error)
-                return error
-            
-            self.data[request] = {}
-            self.timestamp_min_max[request] = {}
-            async with self.AsyncSessionLocal() as session:
-                import time
-                query_start = time.time()
-                print("Querying journaldb...")
-                stmt = select(MessageSql).filter(
-                    MessageSql.from_alias == f"hw1.isone.me.versant.keene.{request.house_alias}.scada",
-                    or_(
-                        MessageSql.message_type_name == "batched.readings",
-                        MessageSql.message_type_name == "report",
-                        MessageSql.message_type_name == "snapshot.spaceheat",
-                    ),
-                    MessageSql.message_persisted_ms >= request.start_ms,
-                    MessageSql.message_persisted_ms <= request.end_ms + 10*60*1000,
-                ).order_by(asc(MessageSql.message_persisted_ms))
-
-                result = await session.execute(stmt)
-                all_raw_messages: List[MessageSql] = result.scalars().all()
-                print(f"Time to fetch data: {round(time.time()-query_start,1)}s")
-
-            if not all_raw_messages:
-                warning_message = f"No data found for the aggregation in the selected timeframe."
-                return {"success": False, "message": warning_message, "reload": False}
-            
-            for house_alias in set([message.from_alias for message in all_raw_messages]):
-                if 'maple' in house_alias:
-                    print("Skipped maple")
-                    continue
-                self.data[request][house_alias] = {}
-
-                # Process reports
-                reports: List[MessageSql] = sorted([
-                    x for x in all_raw_messages 
-                    if x.message_type_name in ['report', 'batched.readings']
-                    and x.from_alias == house_alias
-                    ], key = lambda x: x.message_persisted_ms
-                    )
-                self.data[request][house_alias] = {}
-                for message in reports:
-                    for channel in message.payload['ChannelReadingList']:
-                        if message.message_type_name == 'report':
-                            channel_name = channel['ChannelName']
-                        elif message.message_type_name == 'batched.readings':
-                            for dc in message.payload['DataChannelList']:
-                                if dc['Id'] == channel['ChannelId']:
-                                    channel_name = dc['Name']
-                        if not channel['ValueList'] or not channel['ScadaReadTimeUnixMsList']:
-                            continue
-                        if len(channel['ValueList'])!=len(channel['ScadaReadTimeUnixMsList']):
-                            continue
-                        if ((channel_name not in ['hp-idu-pwr', 'hp-odu-pwr'] and 'depth' not in channel_name) 
-                            or 'micro' in channel_name):
-                            continue
-                        if channel_name not in self.data[request][house_alias]:
-                            self.data[request][house_alias][channel_name] = {'values': [], 'times': []}
-                        self.data[request][house_alias][channel_name]['values'].extend(channel['ValueList'])
-                        self.data[request][house_alias][channel_name]['times'].extend(channel['ScadaReadTimeUnixMsList'])
-                if not self.data[request][house_alias]:
-                    print(f"No data found for {house_alias}")
-                    continue
-
-                # Process snapshots
-                max_timestamp = max(max(self.data[request][house_alias][channel_name]['times']) for channel_name in self.data[request][house_alias])
-                snapshots = sorted(
-                        [x for x in all_raw_messages if x.message_type_name=='snapshot.spaceheat'
-                        and x.message_persisted_ms >= max_timestamp], 
-                        key = lambda x: x.message_persisted_ms
-                        )
-                for snapshot in snapshots:
-                    for snap in snapshot.payload['LatestReadingList']:
-                        if snap['ChannelName'] in self.data[request][house_alias]:
-                            self.data[request][house_alias][snap['ChannelName']]['times'].append(snap['ScadaReadTimeUnixMs'])
-                            self.data[request][house_alias][snap['ChannelName']]['values'].append(snap['Value'])
-
-                # Get minimum and maximum timestamp for plots
-                max_timestamp = max(max(self.data[request][house_alias][x]['times']) for x in self.data[request][house_alias])
-                min_timestamp = min(min(self.data[request][house_alias][x]['times']) for x in self.data[request][house_alias])
-                min_timestamp += -(max_timestamp-min_timestamp)*0.05
-                max_timestamp += (max_timestamp-min_timestamp)*0.05
-                self.timestamp_min_max[request][house_alias] = {
-                    'min_timestamp': self.to_datetime(min_timestamp),
-                    'max_timestamp': self.to_datetime(max_timestamp+5*60*60*1000)
-                }
-
-                # Sort values according to time and convert to datetime
-                for channel_name in self.data[request][house_alias].keys():
-                    sorted_times_values = sorted(zip(self.data[request][house_alias][channel_name]['times'], self.data[request][house_alias][channel_name]['values']))
-                    sorted_times, sorted_values = zip(*sorted_times_values)
-                    self.data[request][house_alias][channel_name]['values'] = list(sorted_values)
-                    self.data[request][house_alias][channel_name]['times'] = pd.to_datetime(list(sorted_times), unit='ms', utc=True)
-                    self.data[request][house_alias][channel_name]['times'] = self.data[request][house_alias][channel_name]['times'].tz_convert(self.timezone_str)
-                    self.data[request][house_alias][channel_name]['times'] = [x.replace(tzinfo=None) for x in self.data[request][house_alias][channel_name]['times']]        
-                
-            # Re-sample to equal timesteps
-            print("Re-sampling...")
-            start_ms = request.start_ms
-            end_ms = request.end_ms + (10*60*1000 if query_start-request.end_ms/1000>10*60 else 0)
-            timestep_s = 30
-            num_points = int((end_ms - start_ms) / (timestep_s * 1000) + 1)
-            sampling_times = np.linspace(start_ms, end_ms, num_points)
-            sampling_times = pd.to_datetime(sampling_times, unit='ms', utc=True)
-            sampling_times = [x.tz_convert(self.timezone_str).replace(tzinfo=None) for x in sampling_times]
-
-            agg_data = {}
-            for house_alias in self.data[request]:
-                agg_data[house_alias] = {'timestamps': sampling_times}
-                for channel in self.data[request][house_alias]:
-                    sampled = await asyncio.to_thread(
-                        pd.merge_asof, 
-                        pd.DataFrame({'times': sampling_times}),
-                        pd.DataFrame(self.data[request][house_alias][channel]),
-                        on='times', 
-                        direction='backward'
-                        )
-                    sampled['values'] = sampled['values'].bfill()
-                    agg_data[house_alias][channel] = list(sampled['values'])
-
-                # Compute average temperature and energy
-                temperature_channels = [value for key, value in agg_data[house_alias].items() if 'depth' in key]
-                num_lists = len(temperature_channels)
-                num_elements = len(temperature_channels[0])
-                sums = [0] * num_elements
-                for channel in temperature_channels:
-                    for i in range(num_elements):
-                        sums[i] += channel[i]
-                averaged_temperature = [sum_value / num_lists for sum_value in sums]
-                m_total_kg = 120*4*3.785
-                agg_data[house_alias]['energy'] = [m_total_kg*4.187/3600*(avg_temp/1000-30) for avg_temp in averaged_temperature]
-                agg_data[house_alias] = {k: v for k, v in agg_data[house_alias].items() if 'depth' not in k}
-            
-            energy_list, hp_list = [], []
-            for i in range(len(agg_data[house_alias]['energy'])):
-                energy_list.append(sum([agg_data[ha]['energy'][i] for ha in agg_data]))
-                hp_list.append(sum([(agg_data[ha]['hp-idu-pwr'][i]+agg_data[ha]['hp-odu-pwr'][i])/1000 for ha in agg_data]))
-            # Remove the last minutes of the energy plot to avoid wierd behaviour
-            energy_list = [
-                energy if t<datetime.fromtimestamp(end_ms/1000-10*60,pytz.timezone(self.timezone_str)).replace(tzinfo=None) else np.nan
-                for t, energy in zip(sampling_times, energy_list)
-                ]
-            hp_list = [
-                power if t<=datetime.fromtimestamp(end_ms/1000-10*60,pytz.timezone(self.timezone_str)).replace(tzinfo=None) else np.nan
-                for t, power in zip(sampling_times, hp_list)
-                ]
-            self.data[request] = {'timestamp': sampling_times, 'hp':hp_list, 'energy': energy_list}
-            print("Done.")
-
-        except Exception as e:
-            print(f"An error occurred in get_aggregate_data():\n{traceback.format_exc()}")
-            return {"success": False, "message": "An error occurred when getting aggregate data", "reload": False}
     
     async def get_messages(self, request: MessagesRequest):
         print("Recieved message request")
@@ -1165,160 +973,6 @@ class VisualizerApi():
                 del self.data[request]
                 print(f"Deleted request data")
             print(f"Unfinished requests in data: {len(self.data)}")
-        
-    # async def get_bids(self, request: DataRequest):
-    #     try:
-    #         async with async_timeout.timeout(self.timeout_seconds):
-    #             print("Getting bids...")
-
-    #             async with self.AsyncSessionLocal() as session:
-    #                 stmt = select(MessageSql).filter(
-    #                     MessageSql.message_type_name == "flo.params.house0",
-    #                     MessageSql.from_alias == f"hw1.isone.me.versant.keene.{request.house_alias}.scada",
-    #                     MessageSql.message_persisted_ms >= request.start_ms,
-    #                     MessageSql.message_persisted_ms <= request.end_ms,
-    #                 ).order_by(desc(MessageSql.payload['StartUnixS']))
-                    
-    #                 result = await session.execute(stmt)
-    #                 flo_params_messages = result.scalars().all()
-
-    #                 flo_params_messages = [FloParamsHouse0(**x.payload) for x in flo_params_messages]
-    #             print(f"Found {len(flo_params_messages)} FLOs for {request.house_alias}")
-
-    #             zip_buffer = io.BytesIO()
-    #             with zipfile.ZipFile(zip_buffer, 'w') as zip_file:
-    #                 for i in range(len(flo_params_messages)):
-    #                     g = Flo(flo_params_messages[i])
-    #                     g.solve_dijkstra()
-    #                     g.generate_recommendation()
-    #                     prices = [x.PriceX1000 for x in g.pq_pairs]
-    #                     quantities = [x.QuantityX1000/1000 for x in g.pq_pairs]
-    #                     # To plot quantities on x-axis and prices on y-axis
-    #                     ps, qs = [], []
-    #                     index_p = 0
-    #                     expected_price_usd_mwh = g.params.elec_price_forecast[0] * 10
-    #                     for p in sorted(list(range(min(prices), max(prices)+1)) + [expected_price_usd_mwh*1000]):
-    #                         ps.append(p/1000)
-    #                         if index_p+1 < len(prices) and p >= prices[index_p+1]:
-    #                             index_p += 1
-    #                         if p == expected_price_usd_mwh*1000:
-    #                             interesection = (quantities[index_p], expected_price_usd_mwh)
-    #                         qs.append(quantities[index_p])
-    #                     # Plot
-    #                     plt.plot(qs, ps, label='demand (bid)')
-    #                     prices = [x.PriceTimes1000/1000 for x in g.pq_pairs]
-    #                     plt.scatter(quantities, prices)
-    #                     plt.plot(
-    #                         [min(quantities)-1, max(quantities)+1],[expected_price_usd_mwh]*2, 
-    #                         label="supply (expected market price)"
-    #                         )
-    #                     plt.scatter(interesection[0], interesection[1])
-    #                     plt.text(
-    #                         interesection[0]+0.25, interesection[1]+15, 
-    #                         f'({round(interesection[0],3)}, {round(interesection[1],1)})', 
-    #                         fontsize=10, color='tab:orange'
-    #                         )
-    #                     plt.xticks(quantities)
-    #                     if min([abs(x-expected_price_usd_mwh) for x in prices]) < 5:
-    #                         plt.yticks(prices)
-    #                     else:
-    #                         plt.yticks(prices + [expected_price_usd_mwh])
-    #                     plt.ylabel("Price [cts/kWh]")
-    #                     plt.xlabel("Quantity [kWh]")
-    #                     plt.title(self.to_datetime(g.params.start_time*1000).strftime('%Y-%m-%d %H:%M'))
-    #                     plt.grid(alpha=0.3)
-    #                     plt.legend()
-    #                     plt.tight_layout()
-    #                     # Append plot to zip
-    #                     img_buf = io.BytesIO()
-    #                     plt.savefig(img_buf, format='png', dpi=300)
-    #                     img_buf.seek(0)
-    #                     zip_file.writestr(f'pq_plot_{i}.png', img_buf.getvalue())
-    #                     plt.close()
-
-    #             del g
-    #             gc.collect()
-    #             zip_buffer.seek(0)
-    #             return StreamingResponse(
-    #                 zip_buffer, 
-    #                 media_type='application/zip', 
-    #                 headers={"Content-Disposition": "attachment; filename=plots.zip"}
-    #                 )
-    #     except asyncio.TimeoutError:
-    #         print("Timed out in get_bids()")
-    #         return {"success": False, "message": "The request timed out.", "reload": False}
-    #     except Exception as e:
-    #         print(f"An error occurred in get_bids():\n{traceback.format_exc()}")
-    #         return {"success": False, "message": "An error occurred while getting bids", "reload": False}
-        
-    async def get_aggregate_plot(self, request: DataRequest):
-        if request.selected_channels == ['prices']:
-            result = await self.get_aggregate_price_plot(request)
-            return result
-        try:
-            async with async_timeout.timeout(self.timeout_seconds):
-                error = await self.get_aggregate_data(request)
-                if error:
-                    print(error)
-                    return error
-                print("No error")
-                
-                # Get plots, zip and return
-                zip_buffer = io.BytesIO()
-                with zipfile.ZipFile(zip_buffer, 'w') as zip_file:
-                    print("Getting plot1...")
-                    html_buffer = await self.plot_aggregate(request)
-                    zip_file.writestr('plot1.html', html_buffer.read())
-
-                    print("Getting plot2...")
-                    html_buffer = await self.plot_prices(request, aggregate=True)
-                    zip_file.writestr('plot2.html', html_buffer.read())
-
-                zip_buffer.seek(0)
-
-                return StreamingResponse(
-                    zip_buffer, 
-                    media_type='application/zip', 
-                    headers={"Content-Disposition": "attachment; filename=plots.zip"}
-                    )
-        except asyncio.TimeoutError:
-            print("Timed out in get_aggregate_plot()")
-            return {"success": False, "message": "The request timed out.", "reload": False}
-        except Exception as e:
-            print(f"An error occurred in get_aggregate_plot():\n{traceback.format_exc()}")
-            return {"success": False, "message": "An error occurred while getting aggregate plot", "reload": False}
-        finally:
-            if request in self.data:
-                del self.data[request]
-                print(f"Deleted request data")
-            print(f"Unfinished requests in data: {len(self.data)}")
-        
-    async def get_aggregate_price_plot(self, request: DataRequest):
-        try:    
-                # Get plots, zip and return
-                zip_buffer = io.BytesIO()
-                with zipfile.ZipFile(zip_buffer, 'w') as zip_file:
-                    html_buffer = await self.plot_prices(request, aggregate=True)
-                    zip_file.writestr('plot.html', html_buffer.read())
-
-                zip_buffer.seek(0)
-
-                return StreamingResponse(
-                    zip_buffer, 
-                    media_type='application/zip', 
-                    headers={"Content-Disposition": "attachment; filename=plots.zip"}
-                    )
-        except asyncio.TimeoutError:
-            print("Timed out in get_aggregate_plot()")
-            return {"success": False, "message": "The request timed out.", "reload": False}
-        except Exception as e:
-            print(f"An error occurred in get_aggregate_plot():\n{traceback.format_exc()}")
-            return {"success": False, "message": "An error occurred while getting aggregate plot", "reload": False}
-        finally:
-            if request in self.data:
-                del self.data[request]
-                print(f"Deleted request data")
-            print(f"Unfinished requests in data: {len(self.data)}")
 
     async def get_plots(self, request: DataRequest, current_user = Depends(get_current_user)):
         try:
@@ -1332,12 +986,6 @@ class VisualizerApi():
                     print(error)
                     return error
                 
-                # If the request is just to plot bids
-                # if request.selected_channels == ['bids']: 
-                #     zip_bids = await self.get_bids(request)
-                #     return zip_bids
-                
-                # Step 2: Plot generation (return JSON specs for client-side Plotly rendering)
                 plot_start = time.time()
                 print("Generating plots...")
                 plots = {}
@@ -1388,120 +1036,6 @@ class VisualizerApi():
         fig_dict = json.loads(fig.to_json())
         fig_dict['config'] = config
         return fig_dict
-
-    async def plot_aggregate(self, request: BaseRequest):
-        plot_start = time.time()
-        self.data[request]['energy'] = [x-min(self.data[request]['energy']) for x in self.data[request]['energy']]
-        
-        df = pd.DataFrame(self.data[request])
-        df['timestamp'] = df['timestamp'] - pd.Timedelta(minutes=5)
-        df_resampled = df.resample('5min', on='timestamp').agg({'energy': 'mean', 'hp': 'mean'}).reset_index()
-        fig = go.Figure()
-
-        fig.add_trace(
-            go.Bar(
-                x=df_resampled['timestamp'],
-                y=df_resampled['energy'],
-                name='Aggregated storage',
-                yaxis='y2',
-                opacity=0.6 if request.darkmode else 0.2,
-                marker=dict(color='#2a4ca2', line=dict(width=0)),
-                hovertemplate="%{x|%H:%M:%S} | %{y:.1f} kWh<extra></extra>",
-            )
-        )
-        # fig.add_trace(
-        #     go.Bar(
-        #         x=df_resampled['timestamp'], 
-        #         y=[x if x>0.9 else 0 for x in list(df_resampled['hp'])], 
-        #         opacity=0.7,
-        #         yaxis='y2',
-        #         marker=dict(color='#d62728', line=dict(width=0)),
-        #         name='Aggregated load',
-        #         hovertemplate="%{x|%H:%M:%S} | %{y:.1f} kW<extra></extra>",
-        #         )
-        #     )
-
-        fig.add_trace(
-            go.Scatter(
-                x=self.data[request]['timestamp'], 
-                y=self.data[request]['energy'], 
-                mode='lines',
-                opacity=0,
-                line=dict(color='#2a4ca2', dash='solid'),
-                name='Aggregated storage',
-                yaxis='y2',
-                hovertemplate="%{x|%H:%M:%S} | %{y:.1f} kWh<extra></extra>",
-                showlegend=False
-                )
-            )
-        
-        fig.add_trace(
-            go.Scatter(
-                x=self.data[request]['timestamp'], 
-                y=self.data[request]['hp'], 
-                mode='lines',
-                opacity=0.9,
-                line=dict(color='#d62728', dash='solid'),
-                name='Aggregated load',
-                hovertemplate="%{x|%H:%M:%S} | %{y:.1f} kW<extra></extra>",
-                showlegend=True,
-                zorder=10
-                )
-            )
-        fig.update_layout(yaxis=dict(title='Power [kWe]'))
-        fig.update_layout(yaxis2=dict(title='Relative thermal energy [kWht]'))
-        fig.update_layout(
-            # title=dict(text='', x=0.5, xanchor='center'),
-            margin=dict(t=30, b=30),
-            plot_bgcolor='#313131' if request.darkmode else '#F5F5F7',
-            paper_bgcolor='#313131' if request.darkmode else '#F5F5F7',
-            font_color='#b5b5b5' if request.darkmode else 'rgb(42,63,96)',
-            title_font_color='#b5b5b5' if request.darkmode else 'rgb(42,63,96)',
-            xaxis=dict(
-                range=[self.to_datetime(request.start_ms), self.to_datetime(request.end_ms+(
-                    5*3600*1000 if time.time()-request.end_ms/1000<5*3600 else 0))],
-                mirror=True,
-                ticks='outside',
-                showline=False,
-                linecolor='#b5b5b5' if request.darkmode else 'rgb(42,63,96)',
-                showgrid=False
-                ),
-            yaxis=dict(
-                range = [0, max(self.data[request]['hp'])*1.3],
-                mirror=True,
-                ticks='outside',
-                showline=False,
-                linecolor='#b5b5b5' if request.darkmode else 'rgb(42,63,96)',
-                zeroline=False,
-                showgrid=False, 
-                gridwidth=1, 
-                gridcolor='#424242' if request.darkmode else 'LightGray'
-                ),
-            yaxis2=dict(
-                range = [0, max(df_resampled['energy'])*1.2],
-                mirror=True,
-                ticks='outside',
-                zeroline=False,
-                showline=False,
-                linecolor='#b5b5b5' if request.darkmode else 'rgb(42,63,96)',
-                showgrid=False,
-                overlaying='y', 
-                side='right'
-                ),
-            legend=dict(
-                x=0,
-                y=1,
-                xanchor='left',
-                yanchor='top',
-                bgcolor='rgba(0, 0, 0, 0)'
-                )
-            )
-        html_buffer = io.StringIO()
-        fig.write_html(html_buffer, config={'displayModeBar': False})
-        html_buffer.seek(0)
-        print(f"Aggregation plot done in {round(time.time()-plot_start,1)} seconds")
-        return html_buffer
-        
         
     async def plot_heatpump(self, request: DataRequest):
         plot_start = time.time()
@@ -2740,9 +2274,7 @@ class VisualizerApi():
         print(f"Weather plot done in {round(time.time()-plot_start,1)} seconds")
         return plot_spec
     
-    async def plot_prices(self, request: Union[DataRequest, BaseRequest], aggregate=False):
-        if not isinstance(request, DataRequest) and not aggregate:
-            raise Exception()
+    async def plot_prices(self, request: Union[DataRequest, BaseRequest]):
         
         plot_start = time.time()
         fig = go.Figure()
@@ -2779,7 +2311,7 @@ class VisualizerApi():
                 x=price_times,
                 y=total_price_values,
                 mode='lines',
-                line=dict(color='#269638' if aggregate else ('#f0f0f0' if request.darkmode else '#5e5e5e')), #42f560
+                line=dict(color='#f0f0f0' if request.darkmode else '#5e5e5e'),
                 opacity=0.8,
                 showlegend=True,
                 line_shape='hv',
@@ -2793,7 +2325,7 @@ class VisualizerApi():
                 x=price_times,
                 y=lmp_values,
                 mode='lines',
-                line=dict(color='#269638' if aggregate else ('#f0f0f0' if request.darkmode else '#5e5e5e'), dash='dot'),
+                line=dict(color='#f0f0f0' if request.darkmode else '#5e5e5e', dash='dot'),
                 opacity=0.4,
                 showlegend=True,
                 line_shape='hv',
@@ -2803,27 +2335,19 @@ class VisualizerApi():
             )
         )
 
-        if aggregate:
-            min_timestep, max_timestep = self.to_datetime(request.start_ms), self.to_datetime(request.end_ms+(
-                    5*3600*1000 if time.time()-request.end_ms/1000<5*3600 else 0))
-            plot_bgcolor='#313131' if request.darkmode else '#F5F5F7'
-            paper_bgcolor='#313131' if request.darkmode else '#F5F5F7'
-            font_color='#b5b5b5' if request.darkmode else 'rgb(42,63,96)'
-            title_font_color='#b5b5b5' if request.darkmode else 'rgb(42,63,96)'
-        else: 
-            min_timestep = self.data[request]['min_timestamp']
-            max_timestep = self.data[request]['max_timestamp']
-            plot_bgcolor='#1b1b1c' if request.darkmode else 'white'
-            paper_bgcolor='#1b1b1c' if request.darkmode else 'white'
-            font_color='#b5b5b5' if request.darkmode else 'rgb(42,63,96)'
-            title_font_color='#b5b5b5' if request.darkmode else 'rgb(42,63,96)'
+        min_timestep = self.data[request]['min_timestamp']
+        max_timestep = self.data[request]['max_timestamp']
+        plot_bgcolor='#1b1b1c' if request.darkmode else 'white'
+        paper_bgcolor='#1b1b1c' if request.darkmode else 'white'
+        font_color='#b5b5b5' if request.darkmode else 'rgb(42,63,96)'
+        title_font_color='#b5b5b5' if request.darkmode else 'rgb(42,63,96)'
             
         fig.update_layout(yaxis=dict(title='Total price [$/MWh]'))
         fig.update_layout(yaxis2=dict(title='LMP [$/MWh]'))
         self.add_internet_down_highlights(fig, request)
         fig.update_layout(
             # shapes = shapes_list,
-            title=dict(text='Price Forecast' if not aggregate else '', x=0.5, xanchor='center'),
+            title=dict(text='Price Forecast', x=0.5, xanchor='center'),
             plot_bgcolor=plot_bgcolor,
             paper_bgcolor=paper_bgcolor,
             font_color=font_color,
@@ -2833,17 +2357,17 @@ class VisualizerApi():
                 range=[min_timestep, max_timestep],
                 mirror=True,
                 ticks='outside',
-                showline=False if aggregate else True,
+                showline=True,
                 linecolor='#b5b5b5' if request.darkmode else 'rgb(42,63,96)',
                 showgrid=False
                 ),
             yaxis=dict(
                 mirror=True,
                 ticks='outside',
-                showline=False if aggregate else True,
+                showline=True,
                 linecolor='#b5b5b5' if request.darkmode else 'rgb(42,63,96)',
                 zeroline=False,
-                showgrid=False if aggregate else True, 
+                showgrid=True, 
                 gridwidth=1, 
                 gridcolor='#424242' if request.darkmode else 'LightGray', 
                 ),
@@ -2851,7 +2375,7 @@ class VisualizerApi():
                 mirror=True,
                 ticks='outside',
                 zeroline=False,
-                showline=False if aggregate else True,
+                showline=True,
                 linecolor='#b5b5b5' if request.darkmode else 'rgb(42,63,96)',
                 showgrid=False,
                 overlaying='y', 
@@ -2869,79 +2393,7 @@ class VisualizerApi():
         config = {'displayModeBar': False, 'staticPlot': False, 'responsive': True}
         print(f"Prices plot done in {round(time.time()-plot_start,1)} seconds")
 
-        # Keep aggregate endpoints backward-compatible (they still zip HTML plots).
-        if aggregate:
-            html_buffer = io.StringIO()
-            fig.write_html(html_buffer, config=config, include_plotlyjs='cdn')
-            html_buffer.seek(0)
-            return html_buffer
-
-        plot_spec = self._fig_to_plot_spec(fig, config)
-        return plot_spec             
-
-    async def login(self, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-        user = db.execute(users.select().where(users.c.username == form_data.username)).first()
-        if not user or not verify_password(form_data.password, user.hashed_password):
-            raise HTTPException(
-                status_code=401,
-                detail="Incorrect username or password",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        access_token_expires = timedelta(minutes=gbo_access_token_expire_minutes)
-        access_token = create_access_token(
-            data={"sub": user.username}, expires_delta=access_token_expires
-        )
-        
-        # Update last login with timezone-aware datetime
-        db.execute(
-            users.update().where(users.c.username == user.username).values(
-                last_login=datetime.now(timezone.utc)
-            )
-        )
-        db.commit()
-        
-        return {"access_token": access_token, "token_type": "bearer"}
-
-    async def logout(self, current_user = Depends(get_current_user)):
-        return {"message": "Successfully logged out"}
-
-    async def read_users_me(self, current_user = Depends(get_current_user)):
-        return current_user
-
-    async def get_google_maps_api_key(self, current_user = Depends(get_current_user)):
-        return {"api_key": settings.google_maps_api_key.get_secret_value()}
-
-    async def receive_alert_reaction(self, alert_reaction: AlertReactionRequest, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
-
-        print(f"Received alert reaction: {alert_reaction}")
-        
-        if alert_reaction.new_status == 'ok':
-            new_house_data = {
-                "status": {'status': 'ok'},
-            }
-        else:
-            return
-        
-        try:
-            # Find the house by short_alias
-            house = db.query(homes).filter(homes.short_alias == alert_reaction.house_alias).first()
-            
-            if not house:
-                print(f"House '{alert_reaction.house_alias}' not found.")
-                return False
-            
-            # Update the house with new data
-            for key, value in new_house_data.items():
-                if hasattr(house, key):
-                    setattr(house, key, value)
-            
-            # Commit the changes
-            db.commit()
-            print(f"House '{alert_reaction.house_alias}' updated successfully")
-            
-        except Exception as e:
-            print(f"Error updating house: {e}")
+        return self._fig_to_plot_spec(fig, config)
 
     async def get_homes(self, current_user = Depends(get_current_user), db: Session = Depends(get_db)):
         print(f"Fetching homes for user: {current_user.username}")
@@ -3317,7 +2769,6 @@ class VisualizerApi():
             "status": "completed",
             "results": results
         }
-
 
 if __name__ == "__main__":
     a = VisualizerApi()
