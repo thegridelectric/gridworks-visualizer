@@ -165,6 +165,11 @@ true_initial_states, true_final_states = [None]*len(flo_params_messages), [None]
 
 for i, flo_params_msg in enumerate(flo_params_messages):
     print(f"\nProcessing FLO {i+1}/{len(flo_params_messages)}...")
+    # flo_params_msg.payload['StabilityPenaltyEnabled'] = False
+    # flo_params_msg.payload['RswtPenaltyWeight'] = 0.5
+    # flo_params_msg.payload['RswtPenaltyDecay'] = 0.9
+    # flo_params_msg.payload['RswtPenaltyExponentRate'] = 0.03
+    # flo_params_msg.payload['RswtPenaltyDecayMaxHour'] = 12
     flo_params = FloParamsHouse0(**flo_params_msg.payload)
     g = Flo(flo_params.to_bytes())
     g.solve_dijkstra()
