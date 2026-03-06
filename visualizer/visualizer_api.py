@@ -251,7 +251,6 @@ class VisualizerApi():
         self.app.post("/csv")(self.get_csv)
         self.app.post("/messages")(self.get_messages)
         self.app.post("/flo")(self.get_flo)
-        self.app.post("/prices")(self.receive_prices)
         self.app.post("/update-scada-code")(self.update_scada_code)
         uvicorn.run(self.app, host="0.0.0.0", port=8000)
 

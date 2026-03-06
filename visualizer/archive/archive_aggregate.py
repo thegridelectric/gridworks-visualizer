@@ -3,6 +3,7 @@
     # ----------------------------------------
     
             self.app.post("/aggregate-plot")(self.get_aggregate_plot)
+        self.app.post("/prices")(self.receive_prices)
 
 
     async def get_aggregate_data(self, request: DataRequest):
