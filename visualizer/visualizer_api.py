@@ -1,12 +1,10 @@
 import io
 import gc
 import json
-import keyword
 import os
 import csv
 import time
 import uuid
-from numpy.matlib import maximum
 import pytz
 import dotenv
 import pendulum
@@ -42,92 +40,15 @@ from passlib.context import CryptContext
 from config import Settings
 from models import MessageSql
 from gridflo.asl.types import FloParamsHouse0
-from gridflo.dijkstra_types import DNode, DEdge
 from gridflo import Flo, DGraphVisualizer
 
 print("Starting API...")
 
 CSV_SAMPLING = True
 
-
-# Backoffice database
-settings = Settings(_env_file=dotenv.find_dotenv())
-engine_gbo = create_engine(settings.gbo_db_url_no_async.get_secret_value())
-gbo_secret_key = settings.secret_key.get_secret_value()
-gbo_algorithm = "HS256"
-gbo_access_token_expire_minutes = int(7*24*60)
-users = Table('users', MetaData(), autoload_with=engine_gbo)
-homes = Table('homes', MetaData(), autoload_with=engine_gbo)
-hourly_electricity = Table('hourly_electricity', MetaData(), autoload_with=engine_gbo)
-gbo_pwd_context = CryptContext(
-    schemes=["bcrypt"],
-    deprecated="auto",
-    bcrypt__rounds=12,
-    bcrypt__ident="2b"
-)
-gbo_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
-Session = sessionmaker(bind=engine_gbo)
-
-Base = declarative_base()
-
-class HouseSql(Base):
-    __tablename__ = 'homes'
-    short_alias = Column(String, nullable=False)
-    address = Column(JSON, nullable=False)
-    primary_contact = Column(JSON, nullable=False)
-    secondary_contact = Column(JSON, nullable=False)
-    hardware_layout = Column(JSON, nullable=True)
-    unique_id = Column(Integer, primary_key=True)
-    g_node_alias = Column(String, nullable=False)
-    alert_status = Column(JSON, nullable=False)
-    representation_status = Column(String, nullable=True)
-    scada_ip_address = Column(String, nullable=True)
-    scada_git_commit = Column(String, nullable=True)
-    house_parameters = Column(JSON, nullable=True)
-
-def verify_password(plain_password, hashed_password):
-    return gbo_pwd_context.verify(plain_password, hashed_password)
-
-def get_password_hash(password):
-    return gbo_pwd_context.hash(password)
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
-    else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, gbo_secret_key, algorithm=gbo_algorithm)
-    return encoded_jwt
-
-def get_db():
-    db = Session()
-    try:
-        yield db
-    finally:
-        db.close()
-
-async def get_current_user(token: str = Depends(gbo_oauth2_scheme), db: Session = Depends(get_db)):
-    credentials_exception = HTTPException(
-        status_code=401,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, gbo_secret_key, algorithms=[gbo_algorithm])
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-        token_data = TokenData(username=username)
-    except JWTError:
-        raise credentials_exception
-    
-    user = db.execute(users.select().where(users.c.username == token_data.username)).first()
-    if user is None:
-        raise credentials_exception
-    return user
-
+# ------------------------------
+# Pydantic models
+# ------------------------------
 
 class Prices(BaseModel):
     unix_s: List[float]
@@ -139,7 +60,6 @@ class BaseRequest(BaseModel):
     house_alias: Union[str, List[str]]
     password: str
     unique_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-
     def __hash__(self):
         return hash(self.unique_id)
 
@@ -202,6 +122,71 @@ class AlertReactionRequest(BaseModel):
 class ScadaUpdateRequest(BaseModel):
     selected_short_aliases: List[str]
     update_packages: bool = False
+
+# ------------------------------
+# Backoffice database setup
+# ------------------------------
+
+settings = Settings(_env_file=dotenv.find_dotenv())
+engine_gbo = create_engine(settings.gbo_db_url_no_async.get_secret_value())
+gbo_secret_key = settings.secret_key.get_secret_value()
+gbo_algorithm = "HS256"
+gbo_access_token_expire_minutes = int(7*24*60)
+users = Table('users', MetaData(), autoload_with=engine_gbo)
+homes = Table('homes', MetaData(), autoload_with=engine_gbo)
+hourly_electricity = Table('hourly_electricity', MetaData(), autoload_with=engine_gbo)
+gbo_pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto",
+    bcrypt__rounds=12,
+    bcrypt__ident="2b"
+)
+gbo_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+Session = sessionmaker(bind=engine_gbo)
+
+# ------------------------------
+# Database functions
+# ------------------------------
+
+def get_db():
+    db = Session()
+    try:
+        yield db
+    finally:
+        db.close()
+
+def verify_password(plain_password, hashed_password):
+    return gbo_pwd_context.verify(plain_password, hashed_password)
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.now(timezone.utc) + expires_delta
+    else:
+        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, gbo_secret_key, algorithm=gbo_algorithm)
+    return encoded_jwt
+
+async def get_current_user(token: str = Depends(gbo_oauth2_scheme), db: Session = Depends(get_db)):
+    credentials_exception = HTTPException(
+        status_code=401,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, gbo_secret_key, algorithms=[gbo_algorithm])
+        username: str = payload.get("sub")
+        token_data = TokenData(username=username)
+    except JWTError:
+        raise credentials_exception
+    
+    user = db.execute(users.select().where(users.c.username == token_data.username)).first()
+    if user is None:
+        raise credentials_exception
+    return user
+
+
 
 class VisualizerApi():
     def __init__(self):
@@ -2940,7 +2925,7 @@ class VisualizerApi():
         
         try:
             # Find the house by short_alias
-            house = db.query(HouseSql).filter(HouseSql.short_alias == alert_reaction.house_alias).first()
+            house = db.query(homes).filter(homes.short_alias == alert_reaction.house_alias).first()
             
             if not house:
                 print(f"House '{alert_reaction.house_alias}' not found.")
