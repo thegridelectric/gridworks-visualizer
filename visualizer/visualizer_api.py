@@ -188,7 +188,7 @@ class VisualizerApi():
         self.AsyncSessionLocal = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
         self.admin_user_password = self.settings.visualizer_api_password.get_secret_value()
         self.timezone_str = 'America/New_York'
-        self.timeout_seconds = 5*60
+        self.timeout_seconds = None if self.running_locally else 5*60
         self.top_states_order = ['LocalControl', 'LeafTransactiveNode', 'Dormant']
         self.lc_states_order = [
             'HpOffStoreDischarge', 'HpOffStoreOff', 'HpOnStoreOff', 
