@@ -3,8 +3,8 @@ import pendulum
 from sqlalchemy import asc, cast
 from sqlalchemy import create_engine, select, BigInteger, MetaData, Table
 from sqlalchemy.orm import sessionmaker
-from config import Settings
-from models import MessageSql
+from visualizer.config import Settings
+from visualizer.models import MessageSql
 from gridflo.asl.types import FloParamsHouse0
 from gridflo.dijkstra_types import DNode, DEdge
 from gridflo import Flo, DGraphVisualizer, DNodeVisualizer
