@@ -1,4 +1,5 @@
 -e ../gridworks-innovations/gridworks-flo
+-e ../gridworks-data/
 python-multipart
 asyncpg
 psycopg2-binary>=2.9.9
