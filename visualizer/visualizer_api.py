@@ -202,7 +202,7 @@ class VisualizerApi():
             'hp-odu-pwr': 0.1*1000, #kWx1000
             'hp-idu-pwr': 0.1*1000, #kWx1000
             'oil-boiler-pwr': 0.2*100, #kWx100
-            'primary-flow': 1*100, #GPMx100
+            'primary-flow': 0.25*100, #GPMx100
             'primary-pump-pwr': 0.3*10, #kWx100
             'dist-swt': 1*1000, #degCx1000
             'dist-rwt': 1*1000, #degCx1000
