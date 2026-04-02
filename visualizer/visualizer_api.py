@@ -1043,6 +1043,48 @@ class VisualizerApi():
         ]
         return {'x_range_ms': x_range_ms, 'late_persistence_periods_ms': late_ms}
 
+    def _hp_on_highlight_periods_ms(self, request: BaseRequest) -> list:
+        """Union of intervals where LC or LA state name contains 'HpOn' (epoch ms)."""
+        end_ms = int(self.data[request]['max_timestamp'].timestamp() * 1000)
+
+        def segments_from_all(states_all: dict, order: list) -> list:
+            pairs = sorted(zip(states_all['times'], states_all['values']))
+            if not pairs:
+                return []
+            collapsed = []
+            for t, idx in pairs:
+                if collapsed and collapsed[-1][0] == t:
+                    collapsed[-1] = (t, idx)
+                else:
+                    collapsed.append((t, idx))
+            out = []
+            for i, (t0, idx) in enumerate(collapsed):
+                if idx < 0 or idx >= len(order):
+                    continue
+                if 'HpOn' not in order[idx]:
+                    continue
+                t0_ms = int(t0)
+                t1_ms = int(collapsed[i + 1][0]) if i + 1 < len(collapsed) else end_ms
+                if t1_ms > t0_ms:
+                    out.append([t0_ms, t1_ms])
+            return out
+
+        lc = self.data[request].get('lc_states', {}).get('all', {'times': [], 'values': []})
+        la = self.data[request].get('la_states', {}).get('all', {'times': [], 'values': []})
+        raw = segments_from_all(lc, self.lc_states_order) + segments_from_all(
+            la, self.la_states_order
+        )
+        if not raw:
+            return []
+        raw.sort(key=lambda p: p[0])
+        merged = [raw[0][:]]
+        for s, e in raw[1:]:
+            if s <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], e)
+            else:
+                merged.append([s, e])
+        return merged
+
     def _depth_scale_cutoff_ms(self) -> int:
         return int(pendulum.datetime(2026, 1, 9, tz=self.timezone_str).timestamp() * 1000)
         
@@ -1062,6 +1104,7 @@ class VisualizerApi():
         return {
             'plotKind': 'heatpump',
             'channels': channels,
+            'hp_on_highlight_periods_ms': self._hp_on_highlight_periods_ms(request),
             **self._plot_axis_meta(request),
         }
 
