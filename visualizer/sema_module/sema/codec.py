@@ -4,7 +4,7 @@ from collections import defaultdict
 from typing import Literal
 
 
-from visualizer.sema.base import (
+from sema_module.sema.base import (
     DegradedSemaType,
     SemaType,
     pascal_to_snake,
@@ -133,7 +133,7 @@ class SemaCodec:
 # ============================================================================
 
 def get_current_types() -> dict[str, type[SemaType]]:
-    from visualizer.sema import types
+    from sema_module.sema import types
     return {
         getattr(types, name).type_name_value(): getattr(types, name)
         for name in types.__all__
@@ -141,7 +141,7 @@ def get_current_types() -> dict[str, type[SemaType]]:
 
 
 def get_old_versions() -> dict[str, dict[str | None, type[SemaType]]]:
-    from visualizer.sema.types import old_versions
+    from sema_module.sema.types import old_versions
     old_types = [getattr(old_versions, name) for name in old_versions.__all__]
 
     registry: dict[str, dict[str | None, type[SemaType]]] = defaultdict(dict)

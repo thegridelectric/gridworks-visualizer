@@ -1,6 +1,6 @@
 from enum import auto
 
-from visualizer.sema.enums.gw_str_enum import SemaEnum
+from sema_module.sema.enums.gw_str_enum import SemaEnum
 
 
 class Gw1Unit(SemaEnum):
