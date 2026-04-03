@@ -41,7 +41,7 @@ from gridflo.asl.types import FloParamsHouse0
 from gridflo import Flo, DGraphVisualizer
 
 #from v2.routers import sessions as v2_sessions
-from v2.routers import installation_readings as v2_readings
+import v2.routers.synced_readings_bundle as v2_synced_readings_bundle
 
 print("Starting API...")
 
@@ -261,7 +261,7 @@ class VisualizerApi():
         self.app.post("/flo")(self.get_flo)
         self.app.post("/update-scada-code")(self.update_scada_code)
 
-        self.app.include_router(v2_readings.router)
+        self.app.include_router(v2_synced_readings_bundle)
 
         uvicorn.run(self.app, host="0.0.0.0", port=8000)
 
