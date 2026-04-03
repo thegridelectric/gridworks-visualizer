@@ -13,6 +13,8 @@ from gw_data.db.models import (
     ReadingSql,
 )
 
+from sema.types.synced_readings_bundle import ChannelReadingsListItem, SyncedReadingsBundleGt
+
 from ..dependencies import get_db
 
 
@@ -32,7 +34,7 @@ class ReadingsResult(BaseModel):
 MAX_POINTS = 100
 INTERVAL_OPTIONS_SECONDS = [1,5,30,60,300,1200]
 
-@router.get('/api/v2/installations/{installation_id}/readings')
+@router.get('/api/v2/installations/{installation_id}/synced.readings.bundle')
 def get_readings(installation_id, query: Annotated[ReadingsQueryParams, Query()], db: Session = Depends(get_db)):
     
     time_range_seconds = (query.end - query.start).total_seconds()
@@ -69,20 +71,23 @@ def get_readings(installation_id, query: Annotated[ReadingsQueryParams, Query()]
 
     times = [row[1] for row in db_result[0:time_count]]
 
-    result = ReadingsResult(
-        start=query.start,
-        end=query.end,
-        times= times,
-        data = {}
-    )
-
+    channel_readings = []
     channel_count = len(db_result) / time_count
     for i in range(0, int(channel_count)):
         start_idx = i * time_count
-        result.data[db_result[start_idx][0]] = [float(row[2]) for row in db_result[start_idx:start_idx + time_count]]
+        channel_readings = ChannelReadingsListItem(
+            channel_name=db_result[start_idx[0]],
+            unit='Second',
+            unit_type='gw1.unit',
+            value_list=[int(row[2]) for row in db_result[start_idx:start_idx + time_count]]
+        )
 
-    for ch in channels:
-        if ch not in result.data:
-            result.data[ch] = []
+    result = SyncedReadingsBundleGt(
+        about_gnode_alias=ta_alias,
+        start_timestamp=query.start,
+        end_timestamp=query.end,
+        timestamp_list=times,
+        channel_readings_list=channel_readings
+    )
 
     return result
