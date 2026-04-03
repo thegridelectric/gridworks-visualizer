@@ -208,7 +208,7 @@ def is_market_name(v: str) -> str:
 
 
 def _market_type_name_enum():
-    from visualizer.sema.enums import MarketTypeName  # noqa: PLC0415
+    from sema_module.sema.enums import MarketTypeName  # noqa: PLC0415
 
     return MarketTypeName
 

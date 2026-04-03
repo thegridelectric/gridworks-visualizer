@@ -1,8 +1,8 @@
-from .base import (
+from sema_module.sema.base import (
     SemaError,
     SemaType,
 )
-from .codec import (
+from sema_module.sema.codec import (
     SemaCodec,
     get_current_types,
 )

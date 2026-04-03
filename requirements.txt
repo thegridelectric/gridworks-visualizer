@@ -1,5 +1,5 @@
 -e ../gridworks-innovations/gridworks-flo
-../gridworks-data/dist/gw_data-0.1.7-py3-none-any.whl
+../gridworks-data/dist/gw_data-0.1.8-py3-none-any.whl
 python-multipart
 asyncpg
 psycopg[binary]>=3.1

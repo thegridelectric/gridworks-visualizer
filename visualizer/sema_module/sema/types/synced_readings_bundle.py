@@ -1,14 +1,14 @@
 from typing import List, Literal, Self
 from pydantic import BaseModel, ConfigDict, StrictInt, model_validator
 
-from visualizer.sema.base import SemaType
-from visualizer.sema.enums.gw1_unit import Gw1Unit
-from visualizer.sema.enums.spaceheat_telemetry_name import SpaceheatTelemetryName
-from visualizer.sema.property_format import LeftRightDot, SpaceheatName, UtcIso8601Seconds
+from sema_module.sema.base import SemaType
+from sema_module.sema.enums.gw1_unit import Gw1Unit
+from sema_module.sema.enums.spaceheat_telemetry_name import SpaceheatTelemetryName
+from sema_module.sema.property_format import LeftRightDot, SpaceheatName, UtcIso8601Seconds
 
 class ChannelReadingsListItem(BaseModel):
     channel_name: SpaceheatName
-    value_list: List[StrictInt]
+    value_list: List[StrictInt | None]
     unit: str
     unit_type: LeftRightDot
 
@@ -26,10 +26,6 @@ class SyncedReadingsBundleGt(SemaType):
     channel_readings_list: List[ChannelReadingsListItem]
     type_name: Literal["synced.readings.bundle"] = "synced.readings.bundle"
     version: Literal["001"] = "001"
-
-# TODO add axioms to ensure:
-#   1. start < end
-#   2. len(timestamp_list) is equal to len(value_list) for reach item in channel_readings_list
 
     @model_validator(mode="after")
     def check_axiom1(self) -> Self:

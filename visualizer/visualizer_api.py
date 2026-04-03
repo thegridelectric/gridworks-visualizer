@@ -261,7 +261,7 @@ class VisualizerApi():
         self.app.post("/flo")(self.get_flo)
         self.app.post("/update-scada-code")(self.update_scada_code)
 
-        self.app.include_router(v2_synced_readings_bundle)
+        self.app.include_router(v2_synced_readings_bundle.router)
 
         uvicorn.run(self.app, host="0.0.0.0", port=8000)
 
