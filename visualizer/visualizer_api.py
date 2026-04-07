@@ -40,7 +40,6 @@ from models import MessageSql
 from gridflo.asl.types import FloParamsHouse0
 from gridflo import Flo, DGraphVisualizer
 
-#from v2.routers import sessions as v2_sessions
 import v2.routers.synced_readings_bundle as v2_synced_readings_bundle
 
 print("Starting API...")
@@ -125,7 +124,6 @@ class ScadaUpdateRequest(BaseModel):
 # ------------------------------
 
 env_file = dotenv.find_dotenv()
-print(f'Loading .env file from {env_file}')
 dotenv.load_dotenv(env_file)
 settings = Settings(_env_file=env_file)
 
