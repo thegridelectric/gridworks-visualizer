@@ -1,5 +1,5 @@
-from sema_module.sema.types.synced_readings_bundle import SyncedReadingsBundleGt
+from sema_module.sema.types.synced_readings_bundle import SyncedReadingsBundle
 
 __all__ = [
-    "SyncedReadingsBundleGt",
+    "SyncedReadingsBundle",
 ]

@@ -6,4 +6,4 @@
 #   - "<format_name>" (for formats)
 
 initial_targets:
-  - "synced.readings.bundle:000"
+  - "synced.readings.bundle:001"
