@@ -85,7 +85,7 @@ class ElectricityUseRequest(BaseModel):
 class Token(BaseModel):
     username: str
     user_type: str
-    installations: list[str]
+    user_installations: list[str]
     access_token: str
     token_type: str
 
@@ -292,11 +292,10 @@ class VisualizerApi():
         data = {
             "username": user.username, 
             "user_type": user.user_type,
-            "installations": user.installations,
+            "user_installations": user.user_installations,
             "access_token": access_token, 
             "token_type": "bearer"
         }
-        print(f"Returning data: {data}")
         return data
 
     async def logout(self, current_user = Depends(get_current_user)):
