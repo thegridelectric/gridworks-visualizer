@@ -285,6 +285,8 @@ class VisualizerApi():
             )
         )
         db.commit()
+
+        print(f"Returning user: {user.username} with user_type: {user.user_type}")
         
         return {
             "username": user.username, 
