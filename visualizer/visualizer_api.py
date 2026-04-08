@@ -83,6 +83,8 @@ class ElectricityUseRequest(BaseModel):
     end_ms: int
 
 class Token(BaseModel):
+    username: str
+    user_type: str
     access_token: str
     token_type: str
 
