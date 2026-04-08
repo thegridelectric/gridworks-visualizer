@@ -286,14 +286,14 @@ class VisualizerApi():
         )
         db.commit()
 
-        print(f"Returning user: {user.username} with user_type: {user.user_type}")
-        
-        return {
+        data = {
             "username": user.username, 
             "user_type": user.user_type,
             "access_token": access_token, 
             "token_type": "bearer"
         }
+        print(f"Returning data: {data}")
+        return data
 
     async def logout(self, current_user = Depends(get_current_user)):
         return {"message": "Successfully logged out"}
