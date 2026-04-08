@@ -286,7 +286,12 @@ class VisualizerApi():
         )
         db.commit()
         
-        return {"access_token": access_token, "token_type": "bearer"}
+        return {
+            "username": user.username, 
+            "user_type": user.user_type,
+            "access_token": access_token, 
+            "token_type": "bearer"
+        }
 
     async def logout(self, current_user = Depends(get_current_user)):
         return {"message": "Successfully logged out"}
