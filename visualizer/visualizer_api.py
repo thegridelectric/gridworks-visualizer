@@ -85,6 +85,7 @@ class ElectricityUseRequest(BaseModel):
 class Token(BaseModel):
     username: str
     user_type: str
+    installations: list[str]
     access_token: str
     token_type: str
 
@@ -291,6 +292,7 @@ class VisualizerApi():
         data = {
             "username": user.username, 
             "user_type": user.user_type,
+            "installations": user.installations,
             "access_token": access_token, 
             "token_type": "bearer"
         }
