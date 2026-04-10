@@ -28,6 +28,7 @@ from sqlalchemy import asc, or_, and_, desc, cast
 from sqlalchemy import create_engine, MetaData, Table, select, BigInteger
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, MetaData, Table
 from sqlalchemy.future import select
 from jose import JWTError, jwt
@@ -84,8 +85,7 @@ class ElectricityUseRequest(BaseModel):
 
 class Token(BaseModel):
     username: str
-    user_type: str
-    user_installations: list[str]
+    roles: dict[str, str]
     access_token: str
     token_type: str
 
@@ -127,6 +127,7 @@ gbo_secret_key = settings.secret_key.get_secret_value()
 gbo_algorithm = "HS256"
 gbo_access_token_expire_minutes = int(7*24*60)
 users = Table('users', MetaData(), autoload_with=engine_gbo)
+user_roles = Table('user_roles', MetaData(), autoload_with=engine_gbo)
 homes = Table('homes', MetaData(), autoload_with=engine_gbo)
 hourly_electricity = Table('hourly_electricity', MetaData(), autoload_with=engine_gbo)
 gbo_pwd_context = CryptContext(
@@ -136,7 +137,7 @@ gbo_pwd_context = CryptContext(
     bcrypt__ident="2b"
 )
 gbo_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
-Session = sessionmaker(bind=engine_gbo)
+Session: Session = sessionmaker(bind=engine_gbo)
 
 # ------------------------------
 # Database functions
@@ -289,12 +290,21 @@ class VisualizerApi():
         )
         db.commit()
 
+        role_rows = db.execute(
+            user_roles.select().where(user_roles.c.username == user.username)
+        ).fetchall()
+        roles: dict[str, str] = {}
+        for row in role_rows:
+            role_val = row.role
+            if hasattr(role_val, "value"):
+                role_val = role_val.value
+            roles[str(role_val)] = row.installation
+
         data = {
-            "username": user.username, 
-            "user_type": user.user_type,
-            "user_installations": user.user_installations,
-            "access_token": access_token, 
-            "token_type": "bearer"
+            "username": user.username,
+            "roles": roles,
+            "access_token": access_token,
+            "token_type": "bearer",
         }
         return data
 
@@ -302,7 +312,7 @@ class VisualizerApi():
         return {"message": "Successfully logged out"}
 
     async def read_current_user(self, current_user = Depends(get_current_user)):
-        return current_user
+        return User(username=current_user.username)
 
     async def get_google_maps_api_key(self, current_user = Depends(get_current_user)):
         return {"api_key": settings.google_maps_api_key.get_secret_value()}
