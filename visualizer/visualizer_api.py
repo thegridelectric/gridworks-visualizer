@@ -104,7 +104,7 @@ class House(BaseModel):
     address: Optional[dict] = None
     primary_contact: Optional[dict] = None
     secondary_contact: Optional[dict] = None
-    hardware_layout: Optional[str] = None
+    hardware_layout: Optional[dict] = None
     unique_id: int
     g_node_alias: Optional[str] = None
     alert_status: Optional[dict] = None
