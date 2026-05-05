@@ -40,6 +40,8 @@ from models import MessageSql
 from gridflo.asl.types import FloParamsHouse0
 from gridflo import Flo, DGraphVisualizer
 
+import v2.routers.synced_readings_bundle as v2_synced_readings_bundle
+
 print("Starting API...")
 
 CSV_SAMPLING = True
@@ -121,7 +123,10 @@ class ScadaUpdateRequest(BaseModel):
 # Backoffice database setup
 # ------------------------------
 
-settings = Settings(_env_file=dotenv.find_dotenv())
+env_file = dotenv.find_dotenv()
+dotenv.load_dotenv(env_file)
+settings = Settings(_env_file=env_file)
+
 engine_gbo = create_engine(settings.gbo_db_url_no_async.get_secret_value())
 gbo_secret_key = settings.secret_key.get_secret_value()
 gbo_algorithm = "HS256"
@@ -253,6 +258,9 @@ class VisualizerApi():
         self.app.post("/messages")(self.get_messages)
         self.app.post("/flo")(self.get_flo)
         self.app.post("/update-scada-code")(self.update_scada_code)
+
+        self.app.include_router(v2_synced_readings_bundle.router)
+
         uvicorn.run(self.app, host="0.0.0.0", port=8000)
 
     def to_datetime(self, time_ms, pendulum_format=False):

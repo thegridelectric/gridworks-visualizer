@@ -1,0 +1,9 @@
+# seed_request_template.yaml
+
+# List of root targets for closure expansion.
+# Each entry must be:
+#   - "<type_or_enum>:<version>"
+#   - "<format_name>" (for formats)
+
+initial_targets:
+  - "synced.readings.bundle:001"
