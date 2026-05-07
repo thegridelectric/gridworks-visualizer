@@ -4,11 +4,12 @@ from typing import Annotated, Dict, Self
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field, model_validator
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
 
 from gw_data.db.models import (
+    MessageSql,
     ReadingChannelSql,
     ReadingSql,
 )
@@ -20,7 +21,7 @@ from ..dependencies import get_db
 
 router = APIRouter()
 
-MAX_POINTS = 100
+MAX_POINTS = 1000
 
 class ReadingsQueryParams(BaseModel):
     start: datetime
@@ -47,47 +48,43 @@ DEFAULT_TIME_STEPS = [1,5,30,60,300,1200]
 def datetime_to_sema(dt: datetime):
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-@router.get('/api/v2/installations/{installation_id}/synced.readings.bundle')
-def get_readings(installation_id, query: Annotated[ReadingsQueryParams, Query()], db: Session = Depends(get_db)):
-    
-    time_range_seconds = (query.end - query.start).total_seconds()
-    time_step_seconds = query.time_step if query.time_step else next(i for i in DEFAULT_TIME_STEPS if i >= time_range_seconds / MAX_POINTS)
-    query_interval = text(f"INTERVAL '{time_step_seconds} seconds'")
+def query_readings_with_times(db: Session, start: datetime, end: datetime, time_step_seconds: int, installation_id: str, channels: list[str]):
 
-    channels = query.channels.split(',')
-    ta_alias = installation_id + ".ta"
 
     # To get an accurate and complete set of time-averaged data for the requested time range,
     # our query needs to include the last value from before our time range begins.
-    # Otherwise, data will be missing for any of our time steps that end before the timestamp of our first value.
-    # Additionally, the first time step that actually does contain a value will not be able to compute an accurate 
+    # Otherwise, data will be missing for any of our time buckets that end before the timestamp of our first value.
+    # Additionally, the first time buckets that actually does contain a value will not be able to compute an accurate 
     # average value, since it won't know its starting value.
     # 
-    # We have no good way to know how far back to search, so we just go a single time step back and hope that it's enough.
-    db_query_start = query.start - timedelta(seconds=time_step_seconds)
+    # We have no good way to know how far back to search, so we just go one time step and hope that it's enough.
+    # Maybe we should increase this to a full hour?
+    db_query_start = start - timedelta(seconds=time_step_seconds)
 
     # Additionally, we need to query for a full time step after our time range so that we can calculate the average value
-    # of the time step that begins at the requested end time.
-    db_query_end = query.end + timedelta(seconds=time_step_seconds)
+    # of the time bucket that begins at the requested end time.
+    db_query_end = end + timedelta(seconds=time_step_seconds)
+
+    query_interval = text(f"INTERVAL '{time_step_seconds} seconds'")
 
 
-
-		# SELECT 
-		# 	reading_channels.name AS channel_name, 
-		# 	reading_channels.unit AS channel_unit, 
-		# 	reading_channels.unit_type AS channel_unit_type, 
-		# 	time_bucket(INTERVAL '30 seconds', readings.timestamp) AS time_bucket, 
-		# 	time_weight('LOCF', readings.timestamp, readings.value) AS time_weight
-		# FROM readings 
-		# JOIN reading_channels ON reading_channels.id = readings.channel_id
-		# WHERE 
-		# 	readings.timestamp >= '2026-01-02T00:00:00'
-		# 	AND readings.timestamp <= '2026-01-02T00:05:00'
-		# 	AND reading_channels.terminal_asset_alias = 'hw1.isone.me.versant.keene.beech.ta' 
-		# 	AND reading_channels.name IN ('hp-ewt') 
-		# GROUP BY time_bucket, reading_channels.name, reading_channels.unit, reading_channels.unit_type 
-		# ORDER BY reading_channels.name, time_bucket
-
+    # The innermost query gets the time-weighted interval data for the selected time range, terminal asset, and channels
+    # 
+    # SELECT 
+    # 	reading_channels.name AS channel_name, 
+    # 	reading_channels.unit AS channel_unit, 
+    # 	reading_channels.unit_type AS channel_unit_type, 
+    # 	time_bucket(INTERVAL '30 seconds', readings.timestamp) AS time_bucket, 
+    # 	time_weight('LOCF', readings.timestamp, readings.value) AS time_weight
+    # FROM readings 
+    # JOIN reading_channels ON reading_channels.id = readings.channel_id
+    # WHERE 
+    # 	readings.timestamp >= '2026-01-02T00:00:00'
+    # 	AND readings.timestamp <= '2026-01-02T00:05:00'
+    # 	AND reading_channels.terminal_asset_alias = 'hw1.isone.me.versant.keene.beech.ta' 
+    # 	AND reading_channels.name IN ('hp-ewt') 
+    # GROUP BY time_bucket, reading_channels.name, reading_channels.unit, reading_channels.unit_type 
+    # ORDER BY reading_channels.name, time_bucket
 
     time_weight_query = select(
         ReadingChannelSql.name.label('channel_name'),
@@ -98,7 +95,7 @@ def get_readings(installation_id, query: Annotated[ReadingsQueryParams, Query()]
     ).join(ReadingChannelSql).filter(
         ReadingSql.timestamp >= db_query_start,
         ReadingSql.timestamp <= db_query_end,
-        ReadingChannelSql.terminal_asset_alias == ta_alias,
+        ReadingChannelSql.terminal_asset_alias == installation_id + ".ta",
         ReadingChannelSql.name.in_(channels)
     ).group_by(
         text('time_bucket'),
@@ -110,6 +107,8 @@ def get_readings(installation_id, query: Annotated[ReadingsQueryParams, Query()]
         text('time_bucket')
     ).subquery()
 
+    # The next query calculates the time-weighted average for the data
+    #
 	# SELECT 
 	# 	anon_2.channel_name AS channel_name, 
 	# 	anon_2.channel_unit AS channel_unit, 
@@ -140,6 +139,8 @@ def get_readings(installation_id, query: Annotated[ReadingsQueryParams, Query()]
         ).label('avg_value')
     ).subquery()
 
+    # The outermost query fills in gaps where there was no data
+    #
     # SELECT 
     # 	anon_1.channel_name, 
     # 	anon_1.channel_unit, 
@@ -177,11 +178,11 @@ def get_readings(installation_id, query: Annotated[ReadingsQueryParams, Query()]
     db_result = db.execute(gapfilled_query).all()
 
 
-    result_bucket_count = math.floor(time_range_seconds / time_step_seconds) + 1
+    result_bucket_count = math.floor((end - start).total_seconds() / time_step_seconds) + 1
     db_result_bucket_count = result_bucket_count + 2
 
     # Our result is a list of rows of (name, time, value).
-    # Each name will have time_count consecutive entries in ascending time order
+    # Each name will have db_result_bucket_count consecutive entries in ascending time order
     # The time values will be repeated for each name
     # We will have one extra piece of data at the front and the end, which 
 
@@ -198,12 +199,144 @@ def get_readings(installation_id, query: Annotated[ReadingsQueryParams, Query()]
             value_list=[None if row[4] is None else int(row[4]) for row in db_result[start_idx:start_idx + result_bucket_count]]
         ))
 
+    return channel_readings, times
+
+def query_late_persistence(db: Session, start: datetime, end: datetime, installation_id: str):
+
+    # select timestamp, is_delayed from (
+    # 	select timestamp, is_delayed, is_delayed <> LAG(is_delayed) OVER (ORDER BY timestamp) as is_delay_changed
+    # 	from (
+    # 		select timestamp, persisted_at - created_at > '1 minute' as is_delayed
+    # 		from messages
+    # 		where from_alias like '%spruce%'
+    # 	)
+    # )
+    # where (is_delay_changed IS NULL OR is_delay_changed)
+    # order by timestamp
+
+    is_delayed_query = select(
+        MessageSql.timestamp.label('timestamp'),
+        ((MessageSql.persisted_at - MessageSql.created_at) > text("INTERVAL '1 minutes'")).label('is_delayed')
+    ).where(
+        MessageSql.from_alias == installation_id + ".scada",
+        MessageSql.message_type_name == 'report.event',
+        MessageSql.timestamp >= start,
+        MessageSql.timestamp <= end
+    ).subquery()
+
+    is_delayed_changed_query = select(
+        is_delayed_query.c.timestamp,
+        is_delayed_query.c.is_delayed,
+        (is_delayed_query.c.is_delayed != func.lag(is_delayed_query.c.is_delayed).over(order_by=text('timestamp'))).label('is_delayed_changed')
+    ).subquery()
+
+    changelist_query = select(
+        is_delayed_changed_query.c.timestamp,
+        is_delayed_changed_query.c.is_delayed
+    ).where(
+        or_(
+            is_delayed_changed_query.c.is_delayed_changed.is_(None),
+            is_delayed_changed_query.c.is_delayed_changed
+        )
+    )
+
+    db_result = db.execute(changelist_query).all()
+
+    result: list[tuple[str, str]] = []
+    delay_start = None
+    for row in db_result:
+        timestamp = row[0]
+        is_delayed = row[1]
+        if is_delayed:
+            delay_start = timestamp
+        elif delay_start is not None:
+            result.append((datetime_to_sema(delay_start), datetime_to_sema(timestamp)))
+            delay_start = None
+
+    if delay_start is not None:
+        result.append((datetime_to_sema(delay_start), datetime_to_sema(end)))
+
+    return result
+
+@router.get('/api/v2/installations/{installation_id}/synced.readings.bundle')
+def get_readings(installation_id, query: Annotated[ReadingsQueryParams, Query()], db: Session = Depends(get_db)):
+    
+    time_range_seconds = (query.end - query.start).total_seconds()
+    time_step_seconds = query.time_step if query.time_step else next(i for i in DEFAULT_TIME_STEPS if i >= time_range_seconds / MAX_POINTS)
+
+    channels = query.channels.split(',')
+
+    channel_readings, times = query_readings_with_times(db, query.start, query.end, time_step_seconds, installation_id, channels)
+
     result = SyncedReadingsBundle(
-        about_gnode_alias=ta_alias,
+        about_gnode_alias=installation_id + ".ta",
         start_timestamp=datetime_to_sema(query.start),
         end_timestamp=datetime_to_sema(query.end),
         timestamp_list=times,
-        channel_readings_list=channel_readings
+        channel_readings_list=channel_readings,
+        late_persistence_list=query_late_persistence(db, query.start, query.end, installation_id),
+        operating_state_sequence_list=[]
     )
 
     return result
+
+# 1. All computed synthetic channels will be computed on-demand.
+# 2. The computations that involve multiplication/division need to be queried separately at a 1-second interval, 
+#   then computed and coalesced into the actual query interval.
+
+    # Anytime we're doing simple addition or subtraction, the timescale is irrelevant.
+    # [(a1 + b1) + (a2 + b2)] / 2 === [(a1+a2)/2 + (b1 + b2)/2]
+    # If we are doing multiplication/division though:
+    # [(a1*b1) + (a2*b2)] / 2 ~ [(a1+a2)/2*(b1+b2)/2 --> a1b1/4 + a1b2/4 ]
+
+
+#   These can be calculated on the way out via SQL or Python
+    # SyntheticChannel(
+    #     name="hp-elec-in",
+    #     display_name="Heat Pump Electrical Power In",
+    #     unit=Gw1Unit.WattHours,
+    # ),
+    # SyntheticChannel(
+    #     name="hp-delta-t", display_name="Heat Pump Delta-T", unit=Gw1Unit.FahrenheitX100
+    # ),
+    # SyntheticChannel(
+    #     name="hp-heat-out",
+    #     display_name="Heat Pump Thermal Power Out",
+    #     unit=Gw1Unit.WattHours,
+    # ),
+    # SyntheticChannel(
+    #     name="hp-cop", display_name="Heat Pump COP", unit=Gw1Unit.Unitless
+    # ),
+    # SyntheticChannel(
+    #     name="dist-delta-t",
+    #     display_name="Distribution Delta-T",
+    #     unit=Gw1Unit.FahrenheitX100,
+    # ),
+    # SyntheticChannel(
+    #     name="dist-heat",
+    #     display_name="Distribution Thermal Power",
+    #     unit=Gw1Unit.WattHours,
+    # ),
+    # SyntheticChannel(
+    #     name="store-delta-t", display_name="Store Delta-T", unit=Gw1Unit.FahrenheitX100
+    # ),
+    # SyntheticChannel(
+    #     name="store-flow-rate", display_name="Store Flow Rate", unit=Gw1Unit.GpmX100
+    # ),
+    # SyntheticChannel(
+    #     name="store-heat-change",
+    #     display_name="Store Thermal Power Change",
+    #     unit=Gw1Unit.WattHours,
+    # ),
+    # SyntheticChannel(
+    #     name="zone1-heatcall", display_name="Zone 1 Heat Call", unit=Gw1Unit.Unitless
+    # ),
+    # SyntheticChannel(
+    #     name="zone2-heatcall", display_name="Zone 2 Heat Call", unit=Gw1Unit.Unitless
+    # ),
+    # SyntheticChannel(
+    #     name="zone3-heatcall", display_name="Zone 3 Heat Call", unit=Gw1Unit.Unitless
+    # ),
+    # SyntheticChannel(
+    #     name="zone4-heatcall", display_name="Zone 4 Heat Call", unit=Gw1Unit.Unitless
+    # ),

@@ -24,6 +24,10 @@ class ChannelReadingsListItem(BaseModel):
         extra="forbid",
     )
 
+class OperatingStateSequence(BaseModel):
+    channel_name: SpaceheatName
+    timestamp_list: List[UtcIso8601Seconds]
+    value_list: List[str]
 
 class SyncedReadingsBundle(SemaType):
     about_gnode_alias: LeftRightDot
@@ -31,6 +35,8 @@ class SyncedReadingsBundle(SemaType):
     end_timestamp: UtcIso8601Seconds
     timestamp_list: List[UtcIso8601Seconds]
     channel_readings_list: List[ChannelReadingsListItem]
+    late_persistence_list: List[tuple[UtcIso8601Seconds, UtcIso8601Seconds]]
+    operating_state_sequence_list: List[OperatingStateSequence]
     type_name: Literal["synced.readings.bundle"] = "synced.readings.bundle"
     version: Literal["001"] = "001"
 
