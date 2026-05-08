@@ -3,6 +3,9 @@ import pickle
 import re
 import pendulum
 import matplotlib.pyplot as plt
+from matplotlib import ticker
+from matplotlib.patches import Patch
+from matplotlib.transforms import blended_transform_factory
 
 ZONE_GW_RE = re.compile(r'^zone(\d+)-(.+)-gw-temp$')
 ZONE_TEMP_RE = re.compile(r'^zone(\d+)-(.+)-temp$')
@@ -12,6 +15,16 @@ DIST_FLOW_PEAK_MIN_GPM = 0.1
 EWMA_ALPHA_GW_TEMP = 0.2
 # During a heat call: if gw-temp exceeds predicted setpoint by this many °F (latched), hide setpoint until call ends.
 SETPOINT_OVERTEMP_SUPPRESS_DEGF = 2.0
+# No active heat: if gw falls this far below predicted setpoint, hide prediction until next gated heat call ends.
+SETPOINT_UNDERTEMP_SUPPRESS_DEGF = 2.0
+# Heat-call timeline band (blue): vertical extent as a fraction of panel height (axes coordinates, bottom-aligned).
+HEAT_CALL_BAND_HEIGHT_FRAC = 0.1
+# Unix ms timestamps are interpreted / labeled in this TZ for plotting.
+DISPLAY_TZ = 'America/New_York'
+
+
+def _format_x_unix_ms_ddmm_hh00(ms: float, _pos=None) -> str:
+    return pendulum.from_timestamp(ms / 1000.0, tz=DISPLAY_TZ).strftime('%d/%m %H:00')
 
 
 def ewma_gw_temp_series(
@@ -285,6 +298,55 @@ def apply_setpoint_overtemp_suppression_during_heat(
     return out, supp_spans
 
 
+def apply_setpoint_offline_undertemp_suppression(
+    gt: list[float],
+    gw_values: list[float],
+    heat_spans: list[tuple[float, float]],
+    validated_off_times: list[float],
+    sp_after_overtemp: list[float],
+    undertemp_f: float,
+) -> tuple[list[float], list[tuple[float, float]]]:
+    """
+    When not in active heat (outside [heat_start, OFF)), if gw_temp < predicted - undertemp_f
+    using predicted ``sp_after_overtemp``, latch NaN output until the next gated heat OFF time > trigger.
+
+    Span list pairs are (trigger_time, clearing_OFF_time); if no OFF exists later, clearing time is ``gt[-1]``.
+    """
+    n = len(gt)
+    if len(gw_values) != n or len(sp_after_overtemp) != n:
+        raise ValueError('gt, gw_values, and sp_after_overtemp must align')
+    offs = sorted(validated_off_times)
+
+    latch = False
+    clear_deadline: float | None = None
+    out: list[float] = []
+    red_spans: list[tuple[float, float]] = []
+
+    for i in range(n):
+        t = gt[i]
+        in_heat = _active_heat_interval_index(heat_spans, t) is not None
+        pm = sp_after_overtemp[i]
+        gv = gw_values[i]
+
+        if latch and clear_deadline is not None and t >= clear_deadline:
+            latch = False
+            clear_deadline = None
+
+        if not latch and not in_heat and pm == pm and gv < pm - undertemp_f:
+            latch = True
+            clear_deadline = next((o for o in offs if o > t), None)
+            red_hi = clear_deadline if clear_deadline is not None else gt[-1]
+            if t <= red_hi:
+                red_spans.append((t, red_hi))
+
+        if latch:
+            out.append(float('nan'))
+        else:
+            out.append(pm)
+
+    return out, red_spans
+
+
 def zone_heat_start_anchor_series(
     gw_times: list[float],
     gw_values: list[float],
@@ -338,8 +400,8 @@ if 'dist-flow' in data_by_channel:
     flow_t_sorted = [p[0] for p in _fp]
     flow_v_sorted = [p[1] for p in _fp]
 
-# Plot the zones and dist-flow (squeeze=False so axes is always a 2D array; then 1D indices work)
-nrows = len(zones_temp_channels) + 1
+# Plot the zones (squeeze=False so axes is always a 2D array; then 1D indices work)
+nrows = max(1, len(zones_temp_channels))
 fig, axes = plt.subplots(nrows, 1, sharex=True, figsize=(10, 8), squeeze=False)
 axes = axes.ravel()
 
@@ -361,35 +423,73 @@ for idx, zone in enumerate(sorted(zones_temp_channels)):
         else:
             heat_spans = heat_on_intervals(hc['times'], hc['values'])
             heat_offs = heat_call_completed_end_times(hc['times'], hc['values'])
+        heat_band_trans = blended_transform_factory(ax.transData, ax.transAxes)
         for t0, t1 in heat_spans:
-            ax.axvspan(t0, t1, alpha=0.15, color='coral', zorder=0, linewidth=0)
+            ax.axvspan(
+                t0,
+                t1,
+                ymin=0,
+                ymax=HEAT_CALL_BAND_HEIGHT_FRAC,
+                transform=heat_band_trans,
+                alpha=0.45,
+                color='tab:blue',
+                zorder=0,
+                linewidth=0,
+            )
         _gt_ord, sp_base = zone_setpoint_series(z_times, z_values, heat_spans, heat_offs)
         sp, overtemp_spans = apply_setpoint_overtemp_suppression_during_heat(
             _gt_ord, gv_plot, heat_spans, sp_base, SETPOINT_OVERTEMP_SUPPRESS_DEGF
         )
+        sp, undertemp_spans = apply_setpoint_offline_undertemp_suppression(
+            _gt_ord,
+            gv_plot,
+            heat_spans,
+            heat_offs,
+            sp,
+            SETPOINT_UNDERTEMP_SUPPRESS_DEGF,
+        )
         for s0, s1 in overtemp_spans:
-            ax.axvspan(s0, s1, alpha=0.2, color='tab:green', zorder=1, linewidth=0)
-        ax.plot(_gt_ord, sp, label='setpoint (pred)', color='tab:green', linestyle='--', zorder=2)
+            ax.axvspan(s0, s1, alpha=0.2, color='tab:red', zorder=1, linewidth=0)
+        for r0, r1 in undertemp_spans:
+            ax.axvspan(r0, r1, alpha=0.22, color='tab:green', zorder=2, linewidth=0)
+        ax.plot(_gt_ord, sp, label='setpoint (pred)', color='tab:green', linestyle='--', zorder=3)
         _gt_h0, h0 = zone_heat_start_anchor_series(z_times, z_values, heat_spans)
         # ax.plot(_gt_h0, h0, label='heat-start gw (pred)', color='tab:red', linestyle='--', zorder=2)
-    ax.plot(gt_plot, gv_plot, label='gw-temp', zorder=2, alpha=0.7)
+    ax.plot(gt_plot, gv_plot, label='gw-temp', zorder=3, alpha=0.5, color='gray')
     if zone in zones_other_temp_channels and HOUSE_ALIAS != "spruce":
         other_name = zones_other_temp_channels[zone]
         ax.plot(data_by_channel[other_name]['times'],
                 data_by_channel[other_name]['values'],
-                label='temp', color='tab:purple')
-        ax.legend(loc='upper right', fontsize=8)
-    elif heat_ch in data_by_channel:
-        ax.legend(loc='upper right', fontsize=8)
+                label='temp', color='tab:purple', zorder=3)
+    leg_handles, _leg_labels = ax.get_legend_handles_labels()
+    if heat_ch in data_by_channel:
+        leg_handles.extend(
+            [
+                Patch(
+                    facecolor='tab:red',
+                    alpha=0.2,
+                    edgecolor='none',
+                    label='Below setpoint',
+                ),
+                Patch(
+                    facecolor='tab:green',
+                    alpha=0.22,
+                    edgecolor='none',
+                    label='Above setpoint',
+                ),
+            ]
+        )
+    if leg_handles:
+        ax.legend(handles=leg_handles, loc='upper right', fontsize=8)
     ax.set_ylabel(f'Zone {zone} Temp (°F)')
     ax.set_title(f'Zone {zone}')
 
-# Plot dist-flow
-ax = axes[-1]
-flow = data_by_channel['dist-flow']
-ax.plot(flow['times'], flow['values'], color='tab:orange')
-ax.set_ylabel('Dist Flow (GPM)')
-ax.set_title('Dist Flow')
+# Plot dist-flow (disabled for now)
+# ax = axes[-1]
+# flow = data_by_channel['dist-flow']
+# ax.plot(flow['times'], flow['values'], color='tab:blue')
+# ax.set_ylabel('Dist Flow (GPM)')
+# ax.set_title('Dist Flow')
 
 if zones_temp_channels:
     axes[0].set_xlim(
@@ -399,6 +499,10 @@ if zones_temp_channels:
 else:
     ft = data_by_channel['dist-flow']['times']
     axes[0].set_xlim(left=ft[0], right=ft[-1])
+
+for ax in axes.ravel():
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(_format_x_unix_ms_ddmm_hh00))
+    plt.setp(ax.get_xticklabels(), rotation=30, ha='right')
 
 plt.tight_layout()
 plt.show()
