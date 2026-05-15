@@ -207,6 +207,7 @@ class VisualizerApi():
             'hp-idu-pwr': 0.1*1000, #kWx1000
             'oil-boiler-pwr': 0.2*100, #kWx100
             'primary-flow': 0.25*100, #GPMx100
+            'sieg-flow': 0.05*100, #GPMx100
             'primary-pump-pwr': 0.3*10, #kWx100
             'dist-swt': 1*1000, #degCx1000
             'dist-rwt': 1*1000, #degCx1000
@@ -1113,7 +1114,7 @@ class VisualizerApi():
         plot_start = time.time()
         heatpump_channel_names = [
             'hp-lwt', 'hp-ewt', 'hp-odu-pwr', 'hp-idu-pwr',
-            'oil-boiler-pwr', 'primary-flow', 'primary-pump-pwr',
+            'oil-boiler-pwr', 'primary-flow', 'primary-pump-pwr', 'sieg-flow',
         ]
         channels = {}
         for name in heatpump_channel_names:
