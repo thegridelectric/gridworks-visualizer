@@ -42,6 +42,7 @@ from gridflo import Flo, DGraphVisualizer
 
 import v2.routers.synced_readings_bundle as v2_synced_readings_bundle
 import v2.routers.messages as v2_messages
+import v2.routers.session as v2_session
 
 print("Starting API...")
 
@@ -263,6 +264,7 @@ class VisualizerApi():
 
         self.app.include_router(v2_synced_readings_bundle.router)
         self.app.include_router(v2_messages.router)
+        self.app.include_router(v2_session.router)
 
         uvicorn.run(self.app, host="0.0.0.0", port=8000)
 
