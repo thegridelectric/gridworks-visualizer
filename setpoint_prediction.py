@@ -373,6 +373,64 @@ def zone_heat_start_anchor_series(
     return gt, out
 
 
+def _timeline_in_any_span(spans: list[tuple[float, float]], t: float) -> bool:
+    return any(lo <= t <= hi for lo, hi in spans)
+
+
+def next_gated_heat_start_after(heat_spans: list[tuple[float, float]], t_exclusive: float) -> float | None:
+    sts = sorted(ts for ts, _ in heat_spans if ts > t_exclusive)
+    return sts[0] if sts else None
+
+
+def mask_zone_heat_start_line_after_highlights(
+    gt: list[float],
+    h0_raw: list[float],
+    overtemp_spans: list[tuple[float, float]],
+    undertempo_spans: list[tuple[float, float]],
+    heat_spans: list[tuple[float, float]],
+) -> list[float]:
+    """
+    Heat-start line hidden before any gated heat; hidden inside ambiguity highlights; after leaving a
+    highlight, stays hidden until the next gated heat span starts (ts > exit time).
+    """
+    if not heat_spans:
+        return [float('nan')] * len(gt)
+    first_hs = min(ts for ts, _ in heat_spans)
+    n = len(gt)
+    if len(h0_raw) != n:
+        raise ValueError('gt and h0_raw must align')
+
+    out: list[float] = []
+    post_block = False
+    pending_clear_ts: float | None = None
+    in_prev = False
+
+    for i, t in enumerate(gt):
+        in_h = _timeline_in_any_span(overtemp_spans, t) or _timeline_in_any_span(undertempo_spans, t)
+
+        if pending_clear_ts is not None and t >= pending_clear_ts:
+            post_block = False
+            pending_clear_ts = None
+
+        exited_highlight = in_prev and not in_h
+        if exited_highlight:
+            post_block = True
+            pending_clear_ts = next_gated_heat_start_after(heat_spans, t)
+
+        if (
+            in_h
+            or post_block
+            or t < first_hs
+        ):
+            out.append(float('nan'))
+        else:
+            out.append(h0_raw[i])
+
+        in_prev = in_h
+
+    return out
+
+
 zones_temp_channels = {}
 zones_other_temp_channels = {}
 for name in data_by_channel:
@@ -454,9 +512,20 @@ for idx, zone in enumerate(sorted(zones_temp_channels)):
             ax.axvspan(s0, s1, alpha=0.2, color='tab:red', zorder=1, linewidth=0)
         for r0, r1 in undertemp_spans:
             ax.axvspan(r0, r1, alpha=0.22, color='tab:green', zorder=2, linewidth=0)
-        ax.plot(_gt_ord, sp, label='setpoint (pred)', color='tab:orange', linestyle='--', zorder=3, linewidth=2.5)
-        _gt_h0, h0 = zone_heat_start_anchor_series(z_times, z_values, heat_spans)
-        # ax.plot(_gt_h0, h0, label='heat-start gw (pred)', color='tab:red', linestyle='--', zorder=2)
+        ax.plot(_gt_ord, sp, label='Heat stops (pred)', color='tab:orange', linestyle='--', zorder=3, linewidth=2.5)
+        _gt_h0, h0_raw = zone_heat_start_anchor_series(z_times, z_values, heat_spans)
+        h0 = mask_zone_heat_start_line_after_highlights(
+            _gt_h0, h0_raw, overtemp_spans, undertemp_spans, heat_spans
+        )
+        ax.plot(
+            _gt_h0,
+            h0,
+            label='Heat starts (pred)',
+            color='tab:cyan',
+            linestyle='--',
+            zorder=3,
+            linewidth=2.5,
+        )
     if zone in zones_other_temp_channels and HOUSE_ALIAS != "spruce":
         other_name = zones_other_temp_channels[zone]
         ax.plot(data_by_channel[other_name]['times'],
