@@ -1,0 +1,328 @@
+metadata:
+  registry_version: "1.0"
+  last_updated: "2026-05-15T21:30:00Z"
+  maintainer: "gridworks-energy"
+
+snapshot:
+  built_at: "2026-05-15T21:43:58Z"
+
+formats:
+  handle.name:
+    owner: gridworks-energy
+    schema_url: "https://schemas.electricity.works/formats/handle.name"
+    created: "2024-09-02T15:00:00Z"
+    description: "Dot-separated hierarchical identifier with hyphen-friendly lowercase segments"
+
+  left.right.dot:
+    owner: gridworks-energy
+    schema_url: "https://schemas.electricity.works/formats/left.right.dot"
+    created: "2024-09-02T15:00:00Z"
+    description: "Dot-separated hierarchical identifier composed of lowercase alphanumeric segments"
+
+  spaceheat.name:
+    owner: gridworks-energy
+    schema_url: "https://schemas.electricity.works/formats/spaceheat.name"
+    created: "2024-09-02T15:00:00Z"
+    description: "Single-segment lowercase identifier with optional internal hyphen-separated words"
+
+  utc.iso8601.seconds:
+    owner: gridworks-energy
+    schema_url: "https://schemas.electricity.works/formats/utc.iso8601.seconds"
+    created: "2026-02-22T16:43:00Z"
+    description: "UTC timestamp in ISO 8601 format with second precision and Z suffix"
+
+  utc.milliseconds:
+    owner: gridworks-energy
+    schema_url: "https://schemas.electricity.works/formats/utc.milliseconds"
+    created: "2024-09-02T15:00:00Z"
+    description: "UTC timestamp in whole milliseconds since Unix epoch (2000–3000 range)"
+
+  utc.seconds:
+    owner: gridworks-energy
+    schema_url: "https://schemas.electricity.works/formats/utc.seconds"
+    created: "2024-09-02T15:00:00Z"
+    description: "UTC timestamp in whole seconds since Unix epoch (2000–3000 range)"
+
+  uuid4.str:
+    owner: gridworks-energy
+    schema_url: "https://schemas.electricity.works/formats/uuid4.str"
+    created: "2024-09-02T15:00:00Z"
+    description: "Canonical lowercase UUIDv4 string (RFC 4122) in 8-4-4-4-12 format"
+
+enums:
+  gw1.lc.top.state:
+    latest_version: "001"
+    owner: gridworks-energy
+    enum_type: "versioned"
+    description: "Local-Control sub-state of a GridWorks spaceheat system"
+
+    versions:
+      "001":
+        schema_url: "https://schemas.electricity.works/enums/gw1.lc.top.state/001"
+        created: "2026-05-08T19:57:00Z"
+
+  gw1.leaf.ally.all.tanks.state:
+    latest_version: "001"
+    owner: gridworks-energy
+    enum_type: "versioned"
+    description: "LTN sub-state of a GridWorks spaceheat system while using storage tanks"
+
+    versions:
+      "001":
+        schema_url: "https://schemas.electricity.works/enums/gw1.leaf.ally.all.tanks.state/001"
+        created: "2026-05-08T19:57:00Z"
+
+  gw1.leaf.ally.buffer.only.state:
+    latest_version: "001"
+    owner: gridworks-energy
+    enum_type: "versioned"
+    description: "LTN sub-state of a GridWorks spaceheat system while using a buffer tank only."
+
+    versions:
+      "001":
+        schema_url: "https://schemas.electricity.works/enums/gw1.leaf.ally.buffer.only.state/001"
+        created: "2026-05-08T19:57:00Z"
+
+  gw1.local.control.all.tanks.state:
+    latest_version: "001"
+    owner: gridworks-energy
+    enum_type: "versioned"
+    description: "Local-Control sub-state of a GridWorks spaceheat system while using storage tanks."
+
+    versions:
+      "001":
+        schema_url: "https://schemas.electricity.works/enums/gw1.local.control.all.tanks.state/001"
+        created: "2026-05-08T19:57:00Z"
+
+  gw1.local.control.buffer.only.state:
+    latest_version: "001"
+    owner: gridworks-energy
+    enum_type: "versioned"
+    description: "Local-Control sub-state of a GridWorks spaceheat system while using a buffer tank only."
+
+    versions:
+      "001":
+        schema_url: "https://schemas.electricity.works/enums/gw1.local.control.buffer.only.state/001"
+        created: "2026-05-08T19:57:00Z"
+
+  gw1.local.control.standby.top.state:
+    latest_version: "001"
+    owner: gridworks-energy
+    enum_type: "versioned"
+    description: "Local-Control sub-state of a GridWorks spaceheat system in standby mode."
+
+    versions:
+      "001":
+        schema_url: "https://schemas.electricity.works/enums/gw1.local.control.standby.top.state/001"
+        created: "2026-05-08T19:57:00Z"
+
+  gw1.main.auto.state:
+    latest_version: "001"
+    owner: gridworks-energy
+    enum_type: "versioned"
+    description: "Top-level state of a GridWorks spaceheat system."
+
+    versions:
+      "001":
+        schema_url: "https://schemas.electricity.works/enums/gw1.main.auto.state/001"
+        created: "2026-05-08T19:57:00Z"
+
+  gw1.unit:
+    latest_version: "001"
+    owner: gridworks-energy
+    enum_type: "versioned"
+    description: "Measurement-unit vocabulary used for derived channels."
+
+    versions:
+      "001":
+        schema_url: "https://schemas.electricity.works/enums/gw1.unit/001"
+        created: "2026-03-04T19:00:00Z"
+        added_values:
+          - "Seconds"
+          - "SecondsX10"
+
+  log.level:
+    owner: gridworks-energy
+    enum_type: "literal"
+    description: "Logging level."
+    schema_url: "https://schemas.electricity.works/enums/log.level/000"
+    created: "2026-05-13T00:00:00Z"
+
+  relay.closed.or.open:
+    owner: gridworks-energy
+    enum_type: "literal"
+    description: "FSM states for a simple relay with open and closed positions."
+    schema_url: "https://schemas.electricity.works/enums/relay.closed.or.open/000"
+    created: "2024-09-17T20:17:00Z"
+
+  spaceheat.telemetry.name:
+    latest_version: "007"
+    owner: gridworks-energy
+    enum_type: "versioned"
+    description: "Legacy Spaceheat telemetry-name vocabulary for raw channels."
+
+    versions:
+      "007":
+        schema_url: "https://schemas.electricity.works/enums/spaceheat.telemetry.name/007"
+        created: "2026-03-30T17:12:00Z"
+        added_values:
+          - "BinaryState"
+
+types:
+  channel.readings.list.item:
+    latest_version: "000"
+    owner: gridworks-energy
+    versioning_strategy: "literal"
+    description: "Channel-specific readings and unit metadata for one entry in a synchronized readings bundle."
+
+    versions:
+      "000":
+        schema_url: "https://schemas.electricity.works/types/channel.readings.list.item/000"
+        created: "2026-05-05T00:00:00Z"
+        summary: "Initial Sema version"
+        direct_dependencies:
+          structural:
+            - "left.right.dot"
+            - "spaceheat.name"
+
+  glitch:
+    latest_version: "000"
+    owner: gridworks-energy
+    versioning_strategy: "literal"
+    description: "Report of an unexpected system event with logging level, source node, and detail."
+
+    versions:
+      "000":
+        schema_url: "https://schemas.electricity.works/types/glitch/000"
+        created: "2026-05-13T00:00:00Z"
+        summary: "Initial Sema version"
+        direct_dependencies:
+          structural:
+            - "left.right.dot"
+            - "log.level:000"
+            - "spaceheat.name"
+            - "utc.milliseconds"
+
+  gridworks.event.problem:
+    latest_version: "001"
+    owner: gridworks-energy
+    versioning_strategy: "literal"
+    description: "Event message reporting a problem detected in a GridWorks node."
+
+    versions:
+      "001":
+        schema_url: "https://schemas.electricity.works/types/gridworks.event.problem/001"
+        created: "2026-05-13T00:00:00Z"
+        summary: "Initial Sema version"
+        direct_dependencies:
+          structural:
+            - "utc.milliseconds"
+            - "uuid4.str"
+
+  operating.state.sequence:
+    latest_version: "000"
+    owner: gridworks-energy
+    versioning_strategy: "literal"
+    description: null
+
+    versions:
+      "000":
+        schema_url: "https://schemas.electricity.works/types/operating.state.sequence/000"
+        created: "2026-05-15T21:30:00Z"
+        summary: "Initial Sema version"
+        direct_dependencies:
+          structural:
+            - "spaceheat.name"
+            - "utc.iso8601.seconds"
+
+  single.machine.state:
+    latest_version: "000"
+    owner: gridworks-energy
+    versioning_strategy: "literal"
+    description: "Latest known state for a single state machine at a specific timestamp."
+
+    versions:
+      "000":
+        schema_url: "https://schemas.electricity.works/types/single.machine.state/000"
+        created: "2026-03-30T19:01:47Z"
+        summary: "Initial Sema version"
+        direct_dependencies:
+          structural:
+            - "handle.name"
+            - "left.right.dot"
+            - "utc.milliseconds"
+          axiom:
+            - "relay.closed.or.open:000"
+
+  single.reading:
+    latest_version: "000"
+    owner: gridworks-energy
+    versioning_strategy: "literal"
+    description: "Latest known reading for a single channel at a specific SCADA read time."
+
+    versions:
+      "000":
+        schema_url: "https://schemas.electricity.works/types/single.reading/000"
+        created: "2026-03-30T19:01:47Z"
+        summary: "Initial Sema version"
+        direct_dependencies:
+          structural:
+            - "spaceheat.name"
+            - "utc.milliseconds"
+
+  snapshot.spaceheat:
+    latest_version: "003"
+    owner: gridworks-energy
+    versioning_strategy: "literal"
+    description: "Point-in-time snapshot containing the latest known readings and machine states captured by a Spaceheat SCADA."
+
+    versions:
+      "003":
+        schema_url: "https://schemas.electricity.works/types/snapshot.spaceheat/003"
+        created: "2026-03-30T19:01:47Z"
+        summary: "Baseline runtime version (no prior version tracked)."
+        direct_dependencies:
+          structural:
+            - "left.right.dot"
+            - "single.machine.state:000"
+            - "single.reading:000"
+            - "utc.milliseconds"
+            - "uuid4.str"
+
+  synced.readings.bundle:
+    latest_version: "002"
+    owner: joe-strommen
+    versioning_strategy: "literal"
+    description: "Time-aligned sequence of synchronized multi-channel readings with embedded channel semantics sufficient for independent interpretation."
+
+    versions:
+      "002":
+        schema_url: "https://schemas.electricity.works/types/synced.readings.bundle/002"
+        created: "2026-05-15T21:30:00Z"
+        summary: "- ChannelReadingsList[]: inline object -> channel.readings.list.item:000 - Add late persistence times - Add operating state sequence"
+        direct_dependencies:
+          structural:
+            - "channel.readings.list.item:000"
+            - "left.right.dot"
+            - "operating.state.sequence:000"
+            - "utc.iso8601.seconds"
+          axiom:
+            - "gw1.unit:001"
+            - "spaceheat.telemetry.name:007"
+
+  weather.forecast:
+    latest_version: "000"
+    owner: gridworks-energy
+    versioning_strategy: "literal"
+    description: "Multi-interval weather forecast providing outside air temperature and wind speed predictions."
+
+    versions:
+      "000":
+        schema_url: "https://schemas.electricity.works/types/weather.forecast/000"
+        created: "2026-05-13T00:00:00Z"
+        summary: "Initial Sema version"
+        direct_dependencies:
+          structural:
+            - "left.right.dot"
+            - "utc.seconds"
+            - "uuid4.str"

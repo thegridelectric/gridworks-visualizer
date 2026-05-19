@@ -1,0 +1,38 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://schemas.electricity.works/types/operating.state.sequence/000"
+
+title: "operating.state.sequence"
+type: object
+description:
+
+properties:
+
+  ChannelName:
+    $ref: "https://schemas.electricity.works/formats/spaceheat.name"
+
+  ValueList:
+    type: array
+    items:
+      type:
+        - string
+        - "null"
+
+  TimestampList:
+    type: array
+    items:
+      $ref: "https://schemas.electricity.works/formats/utc.iso8601.seconds"
+
+  TypeName:
+    const: "operating.state.sequence"
+
+  Version:
+    const: "000"
+
+required:
+  - ChannelName
+  - ValueList
+  - TimestampList
+  - TypeName
+  - Version
+
+additionalProperties: false
