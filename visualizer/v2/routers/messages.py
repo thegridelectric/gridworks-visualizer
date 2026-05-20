@@ -3,7 +3,7 @@ from typing import Annotated, Self
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from sema_module.sema.codec import SemaCodec
@@ -36,11 +36,19 @@ ALLOWED_MESSAGE_TYPES = {
 
 @router.get("/api/v2/installations/{installation_id}/messages")
 def get_messages(
-    installation_id,
+    installation_id: str,
     query: Annotated[MessagesQueryParams, Query()],
     db: Session = Depends(get_db),
 ):
+    # TODO authorization for the installations
+
     db_message_types = ALLOWED_MESSAGE_TYPES.intersection(query.message_types.split(','))
+    if installation_id == '*':
+        installation_id_filter = []
+    else:
+        installation_ids = installation_id.split(',')
+        installation_id_filter = map(lambda x: MessageSql.from_alias.like(f'%{x}%'), installation_ids)
+
     db_query = (
         select(MessageSql.payload)
         .order_by(MessageSql.timestamp)
@@ -48,10 +56,10 @@ def get_messages(
             MessageSql.timestamp >= query.start,
             MessageSql.timestamp <= query.end,
             MessageSql.message_type_name.in_(db_message_types),
-            MessageSql.from_alias.like(f'%{installation_id}%')
+            or_(*installation_id_filter)
         )
         .order_by(MessageSql.timestamp)
-        .limit(1000)
+        .limit(100)
     )
 
     db_results = db.execute(db_query).all()
