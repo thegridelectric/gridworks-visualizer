@@ -1,7 +1,10 @@
 from datetime import datetime, timedelta
+import io
 import math
-from typing import Annotated, Dict, Self
+import re
+from typing import Annotated, Self
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
 from sqlalchemy import func, or_, select, text
@@ -38,6 +41,7 @@ class ReadingsQueryParams(BaseModel):
     end: datetime
     time_step: int | None = None
     channels: str = Field('')
+    dl: bool | None = None
 
     @model_validator(mode="after")
     def check_start_end(self) -> Self:
@@ -61,29 +65,31 @@ def datetime_to_sema(dt: datetime):
 whitewire_pwr_threshold_default = 20
 whitewire_pwr_threshold_overrides = {"hw1.isone.me.versant.keene.beech": 100, "hw1.isone.me.versant.keene.elm": 1}
 
+def is_regex(x):
+    return len(x) >= 2 and x[0] == '^' and x[-1] == '$'
+def is_not_regex(x):
+    return not is_regex(x)
+
 def determine_query_channels(channels: list[str]):
 
+    augmented_channels = channels.copy()
     # Add the corresponding whitewire-pwr channels for any requested heatcall channels
     whitewire_pwr_channels = []
     for ch in channels:
         if 'heatcall' in ch:
             whitewire_pwr_channels.append(ch.replace('heatcall', 'whitewire-pwr'))
-    channels.extend(whitewire_pwr_channels)
+    augmented_channels.extend(whitewire_pwr_channels)
 
-    def is_regex(x):
-        return x[0] == '^' and x[-1] == '$'
-    def is_not_regex(x):
-        return not is_regex(x)
-    in_channels = list(filter(is_not_regex, channels))
-    like_channels = list(filter(is_regex, channels))
+    str_channels = set(filter(is_not_regex, augmented_channels))
+    regexp_channels = set(filter(is_regex, augmented_channels))
 
-    return in_channels, like_channels
+    return str_channels, regexp_channels
 
 def post_process_channel_readings(installation_id: str, channel_readings: list[ChannelReadingsListItem]):
     readings_by_name = {x.channel_name: x for x in channel_readings}
 
     # Populate the heatcall channels if necessary for any whitewire-pwr channels
-    whitewire_pwr_readings = filter(lambda x: 'whitewire-pwr' in x.channel_name, channel_readings)
+    whitewire_pwr_readings = list(filter(lambda x: 'whitewire-pwr' in x.channel_name, channel_readings))
     for r in whitewire_pwr_readings:
         heatcall_channel_name = r.channel_name.replace('whitewire-pwr', 'heatcall')
         if heatcall_channel_name not in readings_by_name:
@@ -98,7 +104,7 @@ def post_process_channel_readings(installation_id: str, channel_readings: list[C
             channel_readings.append(heatcall_reading)
 
 
-def query_readings_with_times(db: Session, start: datetime, end: datetime, time_step_seconds: int, installation_id: str, in_channels: list[str], like_channels: list[str]):
+def query_readings_with_times(db: Session, start: datetime, end: datetime, time_step_seconds: int, installation_id: str, str_channels: set[str], regexp_channels: set[str]) -> tuple[list[ChannelReadingsListItem],list[str]]:
     # To get an accurate and complete set of time-averaged data for the requested time range,
     # our query needs to include the last value from before our time range begins.
     # Otherwise, data will be missing for any of our time buckets that end before the timestamp of our first value.
@@ -144,8 +150,8 @@ def query_readings_with_times(db: Session, start: datetime, end: datetime, time_
         ReadingSql.timestamp <= db_query_end,
         ReadingChannelSql.terminal_asset_alias == installation_id + ".ta",
         or_(
-            ReadingChannelSql.name.in_(in_channels),
-            *map(lambda x: ReadingChannelSql.name.regexp_match(x), like_channels)
+            ReadingChannelSql.name.in_(str_channels),
+            *map(lambda x: ReadingChannelSql.name.regexp_match(x), regexp_channels)
         )
     ).group_by(
         text('time_bucket'),
@@ -368,6 +374,30 @@ def query_operating_state_sequences(db, start, end, installation_id):
         
     return list(state_sequences.values())
 
+def write_readings_to_csv(csv_buffer: io.StringIO, times: list[str], readings: list[ChannelReadingsListItem]):
+    csv_buffer.write('timestamps')
+    for r in readings:
+        csv_buffer.write(f',{r.channel_name}')    
+        csv_buffer.write('\n')
+
+    for i in range(0, len(times)):
+        csv_buffer.write(times[i])
+        for r in readings:
+            csv_buffer.write(f',{r.value_list[i]}')
+        csv_buffer.write('\n')
+
+def filter_non_requested_readings(channel_readings: list[ChannelReadingsListItem], requested_channels: list[str]) -> list[ChannelReadingsListItem]:
+    str_channels = list(filter(is_not_regex, requested_channels))
+    regexp_channels = list(filter(is_regex, requested_channels))
+
+    return [
+        r
+        for r in channel_readings
+        if r.channel_name in str_channels
+        or len(list(filter(lambda c: re.search(c, r.channel_name), regexp_channels))) > 0
+    ]
+
+
 @router.get('/api/v2/installations/{installation_id}/synced.readings.bundle')
 def get_readings(installation_id, query: Annotated[ReadingsQueryParams, Query()], db: Session = Depends(get_db)):
     
@@ -375,10 +405,26 @@ def get_readings(installation_id, query: Annotated[ReadingsQueryParams, Query()]
     time_step_seconds = query.time_step if query.time_step else next(i for i in DEFAULT_TIME_STEPS if i >= time_range_seconds / MAX_POINTS)
 
     channels = query.channels.split(',')
-    in_channels, like_channels = determine_query_channels(channels)
+    str_channels, regexp_channels = determine_query_channels(channels)
 
-    channel_readings, times = query_readings_with_times(db, query.start, query.end, time_step_seconds, installation_id, in_channels, like_channels)
+    channel_readings, times = query_readings_with_times(db, query.start, query.end, time_step_seconds, installation_id, str_channels, regexp_channels)
     post_process_channel_readings(installation_id, channel_readings)
+
+    channel_readings = filter_non_requested_readings(channel_readings, channels)
+
+    if query.dl:
+        formatted_start_date = query.start.isoformat()[:16].replace('T', '_').replace(':', '').replace('-', '')
+        formatted_end_date = query.end.isoformat()[:16].replace('T', '_')
+        installation_alias = installation_id.split('.')[-1]
+        filename = f'{installation_alias}_{time_step_seconds}s_{formatted_start_date}-{formatted_end_date}.csv'
+        with io.StringIO() as csv_buffer:
+            write_readings_to_csv(csv_buffer, times, channel_readings)
+            return StreamingResponse(
+                iter([csv_buffer.getvalue()]),
+                media_type="text/csv",
+                headers={"Content-Disposition": f"attachment; filename={filename}"}
+            )
+
 
     result = SyncedReadingsBundle(
         about_g_node_alias=installation_id + ".ta",
