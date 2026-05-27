@@ -3,6 +3,7 @@ import io
 import math
 import re
 from typing import Annotated, Self
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
@@ -106,7 +107,7 @@ def post_process_channel_readings(installation_id: str, channel_readings: list[C
             channel_readings.append(heatcall_reading)
 
 
-def query_readings_with_times(db: Session, start: datetime, end: datetime, time_step_seconds: int, installation_id: str, str_channels: set[str], regexp_channels: set[str]) -> tuple[list[ChannelReadingsListItem],list[str]]:
+def query_readings_with_times(db: Session, start: datetime, end: datetime, time_step_seconds: int, installation_id: str, str_channels: set[str], regexp_channels: set[str]) -> tuple[list[ChannelReadingsListItem],list[datetime]]:
     # To get an accurate and complete set of time-averaged data for the requested time range,
     # our query needs to include the last value from before our time range begins.
     # Otherwise, data will be missing for any of our time buckets that end before the timestamp of our first value.
@@ -258,13 +259,12 @@ def query_readings_with_times(db: Session, start: datetime, end: datetime, time_
 
     db_result = db.execute(final_query).all()
 
-
     # Our result is a list of rows of (name, unit, unit_type, time, value).
     # Each name will have db_result_step_count consecutive entries in ascending time order
     # The time values will be repeated in groups for each name/unit/unit_type
     # Each group will have start_buffer_step_count pieces of extra data at the front, plus one more at the end
 
-    times = [datetime_to_sema(row[3]) for row in db_result[start_buffer_step_count:result_step_count+start_buffer_step_count]]
+    times = [row[3] for row in db_result[start_buffer_step_count:result_step_count+start_buffer_step_count]]
 
     channel_readings = []
     channel_count = len(db_result) / db_result_step_count
@@ -274,7 +274,7 @@ def query_readings_with_times(db: Session, start: datetime, end: datetime, time_
             channel_name=db_result[start_idx][0],
             unit=db_result[start_idx][1],
             unit_type=db_result[start_idx][2],
-            value_list=[None if row[4] is None else int(row[4]) for row in db_result[start_idx:start_idx + result_step_count]]
+            value_list=[None if row[4] is None else round(row[4]) for row in db_result[start_idx:start_idx + result_step_count]]
         ))
 
     return channel_readings, times
@@ -396,31 +396,36 @@ def query_operating_state_sequences(db, start, end, installation_id):
         
     return list(state_sequences.values())
 
-def write_readings_to_csv(csv_buffer: io.StringIO, times: list[str], readings: list[ChannelReadingsListItem]):
+TZ_NEW_YORK = ZoneInfo('America/New_York')
+
+def write_readings_to_csv(csv_buffer: io.StringIO, times: list[datetime], readings: list[ChannelReadingsListItem]):
     csv_buffer.write('timestamps')
     for r in readings:
         csv_buffer.write(f',{r.channel_name}')    
     csv_buffer.write('\n')
 
     for i in range(0, len(times)):
-        csv_buffer.write(times[i])
+        csv_buffer.write(times[i].astimezone(TZ_NEW_YORK).strftime('%Y-%m-%d %H:%M:%S'))
         for r in readings:
             val = r.value_list[i]
             val_str = '' if val is None else str(val)
             csv_buffer.write(f',{val_str}')
         csv_buffer.write('\n')
 
-def filter_non_requested_readings(channel_readings: list[ChannelReadingsListItem], requested_channels: list[str]) -> list[ChannelReadingsListItem]:
-    str_channels = list(filter(is_not_regex, requested_channels))
-    regexp_channels = list(filter(is_regex, requested_channels))
+def match_requested_readings(channel_readings: list[ChannelReadingsListItem], requested_channels: list[str]) -> list[ChannelReadingsListItem]:
 
-    return [
-        r
-        for r in channel_readings
-        if r.channel_name in str_channels
-        or len(list(filter(lambda c: re.search(c, r.channel_name), regexp_channels))) > 0
-    ]
-
+    requested_readings = []
+    for c in requested_channels:
+        if is_regex(c):
+            re_results: list[tuple[ChannelReadingsListItem, re.Match[str]]] = [r for r in [(cr, re.fullmatch(c, cr.channel_name)) for cr in channel_readings] if r[1] is not None] # type: ignore
+            # Sort by the regex capture groups first, numerically if possible
+            re_results.sort(key=lambda r: (*([int(g) if g.isdigit() else g for g in r[1].groups()]), r[0].channel_name))
+            matches = [r[0] for r in re_results]
+        else:
+            matches = list(filter(lambda cr: c == cr.channel_name, channel_readings))
+        requested_readings.extend(matches)
+    
+    return requested_readings
 
 @router.get('/api/v2/installations/{installation_id}/synced.readings.bundle')
 def get_readings(installation_id, query: Annotated[ReadingsQueryParams, Query()], db: Session = Depends(get_db)):
@@ -434,7 +439,7 @@ def get_readings(installation_id, query: Annotated[ReadingsQueryParams, Query()]
     channel_readings, times = query_readings_with_times(db, query.start, query.end, time_step_seconds, installation_id, str_channels, regexp_channels)
     post_process_channel_readings(installation_id, channel_readings)
 
-    channel_readings = filter_non_requested_readings(channel_readings, channels)
+    channel_readings = match_requested_readings(channel_readings, channels)
 
     if query.dl:
         formatted_start_date = query.start.isoformat()[:16].replace('T', '_').replace(':', '').replace('-', '')
@@ -454,7 +459,7 @@ def get_readings(installation_id, query: Annotated[ReadingsQueryParams, Query()]
         about_g_node_alias=installation_id + ".ta",
         start_timestamp=datetime_to_sema(query.start),
         end_timestamp=datetime_to_sema(query.end),
-        timestamp_list=times,
+        timestamp_list=[datetime_to_sema(t) for t in times],
         channel_readings_list=channel_readings,
         late_persistence_list=query_late_persistence(db, query.start, query.end, installation_id),
         operating_state_sequence_list=query_operating_state_sequences(db, query.start, query.end, installation_id)
