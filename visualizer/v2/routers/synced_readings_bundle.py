@@ -34,7 +34,7 @@ SEMA_ENUM_LOOKUP: dict[str, SemaEnum] = {
 
 router = APIRouter()
 
-MAX_POINTS = 10000
+MAX_POINTS = 100000
 
 class ReadingsQueryParams(BaseModel):
     start: datetime
@@ -51,13 +51,15 @@ class ReadingsQueryParams(BaseModel):
 
     @model_validator(mode="after")
     def check_time_step(self) -> Self:
-        if self.time_step and (self.end - self.start).total_seconds() / self.time_step > MAX_POINTS:
-            raise ValueError("Too many points requested. Select a shorter time range or larger time step.")
+        if self.time_step:
+            points_requested = math.floor((self.end - self.start).total_seconds() / self.time_step) + 1
+            if points_requested > MAX_POINTS:
+                raise ValueError(f"{points_requested:,} points requested exceeds limit of {MAX_POINTS:,}. Select a shorter time range or larger time step.")
         return self
 
 
 
-DEFAULT_TIME_STEPS = [1,5,30,60,300,1200]
+DEFAULT_TIME_STEPS = [1,5,30,60,300,1800]
 
 def datetime_to_sema(dt: datetime):
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -111,13 +113,19 @@ def query_readings_with_times(db: Session, start: datetime, end: datetime, time_
     # Additionally, the first time bucket that actually does contain a value will not be able to compute an accurate 
     # average value, since it won't know its starting value.
     # 
-    # We have no good way to know how far back to search, so we just go one time step and hope that it's enough.
-    # Maybe we should increase this to a full hour?
-    db_query_start = start - timedelta(seconds=time_step_seconds)
+    # We have no good way to know how far back to search, so we just go 30 minutes and hope it's enough.
+    # Then we need to skip this many records when returning the results
+    start_buffer_step_count = 60 * 30 // time_step_seconds
+    start_buffer_s = start_buffer_step_count * time_step_seconds
+    db_query_start = start - timedelta(seconds=start_buffer_s)
 
     # Additionally, we need to query for a full time step after our time range so that we can calculate the average value
     # of the time bucket that begins at the requested end time.
     db_query_end = end + timedelta(seconds=time_step_seconds)
+
+    result_step_count = math.floor((end - start).total_seconds() / time_step_seconds) + 1
+    db_result_step_count = result_step_count + start_buffer_step_count + 1
+
 
     query_interval = text(f"INTERVAL '{time_step_seconds} seconds'")
 
@@ -170,6 +178,7 @@ def query_readings_with_times(db: Session, start: datetime, end: datetime, time_
 	# 	anon_2.channel_unit AS channel_unit, 
 	# 	anon_2.channel_unit_type AS channel_unit_type, 
 	# 	anon_2.time_bucket AS time_bucket,
+	#	locf(last_val(anon_2.time_weight)) AS last_reading_value,
 	# 	interpolated_average(
 	# 		anon_2.time_weight, 
 	# 		time_bucket, 
@@ -186,6 +195,7 @@ def query_readings_with_times(db: Session, start: datetime, end: datetime, time_
         time_weight_query.c.channel_unit.label('channel_unit'),
         time_weight_query.c.channel_unit_type.label('channel_unit_type'),
         time_weight_query.c.time_bucket.label('time_bucket'),
+        func.locf(func.last_val(time_weight_query.c.time_weight)).label('last_reading_value'),
         func.interpolated_average(
             time_weight_query.c.time_weight,
             text('time_bucket'),
@@ -195,14 +205,15 @@ def query_readings_with_times(db: Session, start: datetime, end: datetime, time_
         ).label('avg_value')
     ).subquery()
 
-    # The outermost query fills in gaps where there was no data
+    # The next query fills in gaps where there was no data
     #
     # SELECT 
     # 	anon_1.channel_name, 
     # 	anon_1.channel_unit, 
     # 	anon_1.channel_unit_type, 
     # 	time_bucket_gapfill(INTERVAL '30 seconds', anon_1.time_bucket) AS time_bucket_gapfilled,
-    # 	locf(max(anon_1.avg_value)) AS locf_1
+    #   max(anon_1.avg_value) as avg_value,
+    # 	locf(max(anon_1.avg_value)) AS locf_value
     # FROM (
     #   -- interpolated_avg_query
     # ) AS anon_1
@@ -219,7 +230,8 @@ def query_readings_with_times(db: Session, start: datetime, end: datetime, time_
         interpolated_avg_query.c.channel_unit,
         interpolated_avg_query.c.channel_unit_type,
         func.time_bucket_gapfill(query_interval, interpolated_avg_query.c.time_bucket).label('time_bucket_gapfilled'),
-        func.locf(func.max(interpolated_avg_query.c.avg_value))
+        func.max(interpolated_avg_query.c.avg_value).label('avg_value'),
+        func.locf(func.max(interpolated_avg_query.c.last_reading_value)).label('last_reading_value')
     ).where(
         interpolated_avg_query.c.avg_value.is_not(None),
         interpolated_avg_query.c.time_bucket >= db_query_start,
@@ -231,28 +243,38 @@ def query_readings_with_times(db: Session, start: datetime, end: datetime, time_
         text('time_bucket_gapfilled')
     )
 
-    db_result = db.execute(gapfilled_query).all()
+    # The final query coalesces the values -- using the time-weighted average if it's available for a bucket,
+    # otherwise the most recent reading value.
+    final_query = select(
+        gapfilled_query.c.channel_name,
+        gapfilled_query.c.channel_unit,
+        gapfilled_query.c.channel_unit_type,
+        gapfilled_query.c.time_bucket_gapfilled,        
+        func.coalesce(
+            gapfilled_query.c.avg_value,
+            gapfilled_query.c.last_reading_value
+        ).label('value')
+    )
+
+    db_result = db.execute(final_query).all()
 
 
-    result_bucket_count = math.floor((end - start).total_seconds() / time_step_seconds) + 1
-    db_result_bucket_count = result_bucket_count + 2
+    # Our result is a list of rows of (name, unit, unit_type, time, value).
+    # Each name will have db_result_step_count consecutive entries in ascending time order
+    # The time values will be repeated in groups for each name/unit/unit_type
+    # Each group will have start_buffer_step_count pieces of extra data at the front, plus one more at the end
 
-    # Our result is a list of rows of (name, time, value).
-    # Each name will have db_result_bucket_count consecutive entries in ascending time order
-    # The time values will be repeated for each name
-    # We will have one extra piece of data at the front and the end, which 
-
-    times = [datetime_to_sema(row[3]) for row in db_result[1:result_bucket_count+1]]
+    times = [datetime_to_sema(row[3]) for row in db_result[start_buffer_step_count:result_step_count+start_buffer_step_count]]
 
     channel_readings = []
-    channel_count = len(db_result) / db_result_bucket_count
+    channel_count = len(db_result) / db_result_step_count
     for i in range(0, int(channel_count)):
-        start_idx = i * db_result_bucket_count + 1
+        start_idx = i * db_result_step_count + start_buffer_step_count
         channel_readings.append(ChannelReadingsListItem(
             channel_name=db_result[start_idx][0],
             unit=db_result[start_idx][1],
             unit_type=db_result[start_idx][2],
-            value_list=[None if row[4] is None else int(row[4]) for row in db_result[start_idx:start_idx + result_bucket_count]]
+            value_list=[None if row[4] is None else int(row[4]) for row in db_result[start_idx:start_idx + result_step_count]]
         ))
 
     return channel_readings, times
@@ -378,12 +400,14 @@ def write_readings_to_csv(csv_buffer: io.StringIO, times: list[str], readings: l
     csv_buffer.write('timestamps')
     for r in readings:
         csv_buffer.write(f',{r.channel_name}')    
-        csv_buffer.write('\n')
+    csv_buffer.write('\n')
 
     for i in range(0, len(times)):
         csv_buffer.write(times[i])
         for r in readings:
-            csv_buffer.write(f',{r.value_list[i]}')
+            val = r.value_list[i]
+            val_str = '' if val is None else str(val)
+            csv_buffer.write(f',{val_str}')
         csv_buffer.write('\n')
 
 def filter_non_requested_readings(channel_readings: list[ChannelReadingsListItem], requested_channels: list[str]) -> list[ChannelReadingsListItem]:
