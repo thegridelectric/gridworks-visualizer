@@ -1,0 +1,27 @@
+# seed_request_template.yaml
+
+# List of root targets for closure expansion.
+# Each entry must be:
+#   - "<type_or_enum>:<version>"
+#   - "<format_name>" (for formats)
+
+initial_targets:
+  types:
+    synced.readings.bundle: {}
+    snapshot.spaceheat:
+      include_all_versions: true
+    weather.forecast:
+      include_all_versions: true
+    glitch:
+      include_all_versions: true
+    gridworks.event.problem:
+      include_all_versions: true
+
+  enums:
+    gw1.main.auto.state: {}
+    gw1.lc.top.state: {}
+    gw1.leaf.ally.all.tanks.state: {}
+    gw1.leaf.ally.buffer.only.state: {}
+    gw1.local.control.all.tanks.state: {}
+    gw1.local.control.buffer.only.state: {}
+    gw1.local.control.standby.top.state: {}

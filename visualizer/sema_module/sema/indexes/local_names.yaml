@@ -1,0 +1,22 @@
+enums:
+  gw1.lc.top.state: gw1.lc.top.state
+  gw1.leaf.ally.all.tanks.state: gw1.leaf.ally.all.tanks.state
+  gw1.leaf.ally.buffer.only.state: gw1.leaf.ally.buffer.only.state
+  gw1.local.control.all.tanks.state: gw1.local.control.all.tanks.state
+  gw1.local.control.buffer.only.state: gw1.local.control.buffer.only.state
+  gw1.local.control.standby.top.state: gw1.local.control.standby.top.state
+  gw1.main.auto.state: gw1.main.auto.state
+  gw1.unit: gw1.unit
+  log.level: log.level
+  relay.closed.or.open: relay.closed.or.open
+  spaceheat.telemetry.name: spaceheat.telemetry.name
+types:
+  channel.readings.list.item: channel.readings.list.item
+  glitch: glitch
+  gridworks.event.problem: gridworks.event.problem
+  operating.state.sequence: operating.state.sequence
+  single.machine.state: single.machine.state
+  single.reading: single.reading
+  snapshot.spaceheat: snapshot.spaceheat
+  synced.readings.bundle: synced.readings.bundle
+  weather.forecast: weather.forecast

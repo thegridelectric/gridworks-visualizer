@@ -1,0 +1,83 @@
+# GENERATED FILE - DO NOT EDIT
+# Generated from definitions/registry.yaml
+
+types:
+  channel.readings.list.item:
+    '000':
+      enums: []
+      formats:
+      - left.right.dot
+      - spaceheat.name
+      types: []
+  glitch:
+    '000':
+      enums:
+      - log.level:000
+      formats:
+      - left.right.dot
+      - spaceheat.name
+      - utc.milliseconds
+      types: []
+  gridworks.event.problem:
+    '001':
+      enums: []
+      formats:
+      - utc.milliseconds
+      - uuid4.str
+      types: []
+  operating.state.sequence:
+    '000':
+      enums: []
+      formats:
+      - spaceheat.name
+      - utc.iso8601.seconds
+      types: []
+  single.machine.state:
+    '000':
+      enums:
+      - relay.closed.or.open:000
+      formats:
+      - handle.name
+      - left.right.dot
+      - utc.milliseconds
+      types: []
+  single.reading:
+    '000':
+      enums: []
+      formats:
+      - spaceheat.name
+      - utc.milliseconds
+      types: []
+  snapshot.spaceheat:
+    '003':
+      enums:
+      - relay.closed.or.open:000
+      formats:
+      - handle.name
+      - left.right.dot
+      - spaceheat.name
+      - utc.milliseconds
+      - uuid4.str
+      types:
+      - single.machine.state:000
+      - single.reading:000
+  synced.readings.bundle:
+    '002':
+      enums:
+      - gw1.unit:001
+      - spaceheat.telemetry.name:007
+      formats:
+      - left.right.dot
+      - spaceheat.name
+      - utc.iso8601.seconds
+      types:
+      - channel.readings.list.item:000
+      - operating.state.sequence:000
+  weather.forecast:
+    '000':
+      enums: []
+      formats:
+      - left.right.dot
+      - utc.seconds
+      - uuid4.str
+      types: []
