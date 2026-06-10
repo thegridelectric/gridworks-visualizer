@@ -19,3 +19,5 @@ plotly
 passlib[bcrypt]
 pydantic-settings
 reportlab
+aio-pika
+websockets
