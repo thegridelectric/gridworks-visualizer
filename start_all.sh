@@ -1,2 +1,2 @@
-./start_websockets.sh
+./start_gateway.sh
 ./start_visualizer.sh
