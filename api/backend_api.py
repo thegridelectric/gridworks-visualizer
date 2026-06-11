@@ -358,20 +358,20 @@ class WebBackendApi():
             # Max plot time range
             if isinstance(request, DataRequest) and not isinstance(request, CsvRequest): 
                 if (request.end_ms-request.start_ms)/1000/3600/24 > MAX_PLOT_DAYS:
-                    warning_message = f"Plotting data from more than {MAX_PLOT_DAYS} days is not permitted to prevent the visualizer EC2 instance from crashing."
-                    warning_message += "\n\nPlease reduce the query time range, or consider running the visualizer API locally for larger queries."
+                    warning_message = f"Plotting data from more than {MAX_PLOT_DAYS} days is not permitted to prevent the web backend EC2 instance from crashing."
+                    warning_message += "\n\nPlease reduce the query time range, or consider running the API locally for larger queries."
                     return {"success": False, "message": warning_message, "reload": False}
             
             # Max CSV download time range
             if isinstance(request, CsvRequest) and (request.end_ms-request.start_ms)/1000/3600/24 > MAX_CSV_DAYS:
-                warning_message = f"Downloading data from more than {MAX_CSV_DAYS} days is not permitted to prevent the visualizer EC2 instance from crashing."
-                warning_message += "\n\nPlease reduce the query time range, or consider running the visualizer API locally for larger queries."
+                warning_message = f"Downloading data from more than {MAX_CSV_DAYS} days is not permitted to prevent the web backend EC2 instance from crashing."
+                warning_message += "\n\nPlease reduce the query time range, or consider running the API locally for larger queries."
                 return {"success": False, "message": warning_message, "reload": False}
             
             # Max messages time range
             if isinstance(request, MessagesRequest) and (request.end_ms-request.start_ms)/1000/3600/24 > MAX_MESSAGES_DAYS:
-                warning_message = f"Downloading messages from more than {MAX_MESSAGES_DAYS} days is not permitted to prevent the visualizer EC2 instance from crashing."
-                warning_message += "\n\nPlease reduce the query time range, or consider running the visualizer API locally for larger queries."
+                warning_message = f"Downloading messages from more than {MAX_MESSAGES_DAYS} days is not permitted to prevent the web backend EC2 instance from crashing."
+                warning_message += "\n\nPlease reduce the query time range, or consider running the API locally for larger queries."
                 return {"success": False, "message": warning_message, "reload": False}
         # else:
         #     if isinstance(request, Union[DataRequest, CsvRequest]) and not request.confirm_with_user:

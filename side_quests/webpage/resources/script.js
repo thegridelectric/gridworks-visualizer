@@ -2,7 +2,7 @@ let house_alias, username, password;
 let darkmode_tf = false;
 let plotsDisplayed = false;
 let isRunningLocally = false;
-let api_host = isRunningLocally ? 'http://localhost:8000' : 'https://visualizer.electricity.works';
+let api_host = isRunningLocally ? 'http://localhost:8000' : 'https://web-backend.electricity.works';
 
 function clearPlots() {
     const plotDivs = [
