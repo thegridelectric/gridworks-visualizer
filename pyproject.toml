@@ -16,6 +16,7 @@ dependencies = [
     "sqlalchemy",
     "fastapi",
     "uvicorn",
+    "websockets",
     "pytz",
     "python-dotenv",
     "httpx",
