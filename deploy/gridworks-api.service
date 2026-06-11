@@ -1,0 +1,17 @@
+[Unit]
+Description=GridWorks REST API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+Group=@USER@
+WorkingDirectory=@REPO@
+EnvironmentFile=@REPO@/.env
+ExecStart=@REPO@/.venv/bin/python -m api
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
