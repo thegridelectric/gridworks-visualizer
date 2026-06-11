@@ -239,7 +239,7 @@ class WebBackendApi():
         self.app.add_middleware(GZipMiddleware, minimum_size=1000)
         self.app.post("/login", response_model=Token)(self.login)
         self.app.post("/logout")(self.logout)
-        self.app.get("/google-maps-api-key")(self.get_google_maps_api_key)
+        # self.app.get("/google-maps-api-key")(self.get_google_maps_api_key)
         self.app.get("/me", response_model=User)(self.read_current_user)
         self.app.get("/homes", response_model=list[House])(self.get_homes)
         self.app.post("/electricity-use")(self.get_electricity_use)
@@ -310,8 +310,8 @@ class WebBackendApi():
     async def read_current_user(self, current_user = Depends(get_current_user)):
         return User(username=current_user.username)
 
-    async def get_google_maps_api_key(self, current_user = Depends(get_current_user)):
-        return {"api_key": settings.google_maps_api_key.get_secret_value()}
+    # async def get_google_maps_api_key(self, current_user = Depends(get_current_user)):
+    #     return {"api_key": settings.google_maps_api_key.get_secret_value()}
 
     def add_internet_down_highlights(self, fig: go.Figure, request: BaseRequest):
         for period_start, period_end in self.data[request].get('late_persistence_periods', []):

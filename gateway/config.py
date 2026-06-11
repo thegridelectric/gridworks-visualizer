@@ -8,14 +8,14 @@ RABBIT_HOST = "hw1-1.electricity.works"
 RABBIT_PORT = 5672
 RABBIT_VHOST = "hw1__1"
 
+GATEWAY_HOST = "0.0.0.0"
+GATEWAY_PORT = 8100
+
 
 class GatewaySettings(BaseSettings):
     rabbit_password: SecretStr = SecretStr("PASSWORD")
     rabbit_exchange: str = "amq.topic"
     rabbit_binding_key: str = "gw.#"
-
-    gateway_host: str = "0.0.0.0"
-    gateway_port: int = 8100
 
     model_config = ConfigDict(
         env_prefix="backend_",

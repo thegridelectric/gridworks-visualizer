@@ -35,9 +35,9 @@ def _postgres_url(
 
 
 class Settings(BaseSettings):
-    journal_db_password: SecretStr = SecretStr("PASSWORD")
-    backoffice_db_password: SecretStr = SecretStr("PASSWORD")
-    access_token_secret: SecretStr = SecretStr("secret_key")
+    journal_db_password: SecretStr
+    backoffice_db_password: SecretStr
+    access_token_secret: SecretStr
     running_locally: bool = False
     google_maps_api_key: SecretStr = SecretStr("")
 
