@@ -34,8 +34,8 @@ from sqlalchemy.future import select
 from jose import JWTError, jwt
 import plotly.graph_objects as go
 from datetime import datetime, timedelta, timezone
-from passlib.context import CryptContext
-from api.config import Settings
+import bcrypt
+from api.config import Settings, CORS_ORIGINS
 from api.models import MessageSql
 from gridflo.asl.types import FloParamsHouse0
 from gridflo import Flo, DGraphVisualizer
@@ -130,12 +130,6 @@ users = Table('users', MetaData(), autoload_with=engine_gbo)
 user_roles = Table('user_roles', MetaData(), autoload_with=engine_gbo)
 homes = Table('homes', MetaData(), autoload_with=engine_gbo)
 hourly_electricity = Table('hourly_electricity', MetaData(), autoload_with=engine_gbo)
-gbo_pwd_context = CryptContext(
-    schemes=["bcrypt"],
-    deprecated="auto",
-    bcrypt__rounds=12,
-    bcrypt__ident="2b"
-)
 gbo_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 Session: Session = sessionmaker(bind=engine_gbo)
 
@@ -151,7 +145,9 @@ def get_db():
         db.close()
 
 def verify_password(plain_password, hashed_password):
-    return gbo_pwd_context.verify(plain_password, hashed_password)
+    if isinstance(hashed_password, str):
+        hashed_password = hashed_password.encode("utf-8")
+    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password)
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
@@ -233,7 +229,7 @@ class WebBackendApi():
         self.app = FastAPI()
         self.app.add_middleware(
             CORSMiddleware,
-            allow_origins=["*"],
+            allow_origins=CORS_ORIGINS,
             allow_credentials=True,
             allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             allow_headers=["*"],

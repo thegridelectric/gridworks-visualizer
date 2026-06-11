@@ -5,6 +5,13 @@ from pydantic_settings import BaseSettings
 
 DEFAULT_ENV_FILE = ".env"
 
+CORS_ORIGINS = [
+    "https://thegridelectric.github.io",
+    "https://visualizer.electricity.works",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
 JOURNAL_DB_USER = "journaldb"
 JOURNAL_DB_HOST = "journaldb.electricity.works"
 JOURNAL_DB_NAME = "journaldb"

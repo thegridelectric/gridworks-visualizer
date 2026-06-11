@@ -24,7 +24,7 @@ dependencies = [
     "python-jose[cryptography]",
     "matplotlib",
     "plotly",
-    "passlib[bcrypt]",
+    "bcrypt",
     "pydantic-settings",
     "reportlab",
     "aio-pika",

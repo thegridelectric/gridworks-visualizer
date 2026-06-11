@@ -417,13 +417,13 @@ dependencies = [
     { name = "aio-pika" },
     { name = "async-timeout" },
     { name = "asyncpg" },
+    { name = "bcrypt" },
     { name = "fastapi" },
     { name = "gridworks-flo" },
     { name = "httpx" },
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "pandas" },
-    { name = "passlib", extra = ["bcrypt"] },
     { name = "pendulum" },
     { name = "plotly" },
     { name = "psycopg2-binary" },
@@ -444,13 +444,13 @@ requires-dist = [
     { name = "aio-pika" },
     { name = "async-timeout" },
     { name = "asyncpg" },
+    { name = "bcrypt" },
     { name = "fastapi" },
     { name = "gridworks-flo", editable = "../gridworks-innovations/gridworks-flo" },
     { name = "httpx" },
     { name = "matplotlib" },
     { name = "numpy", specifier = ">=2.3.3" },
     { name = "pandas", specifier = ">=2.3.3" },
-    { name = "passlib", extras = ["bcrypt"] },
     { name = "pendulum" },
     { name = "plotly" },
     { name = "psycopg2-binary", specifier = ">=2.9.9" },
@@ -678,20 +678,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/f8/45/830bb57f533a4604b355e07edcb8ea18cf88b5f94e5fca92f27052d7c597/pandas-3.0.3-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:f8894dc474d648fe7b6ff0ca9b0bd73950d19952bc1a6534540762c5d79d305c", size = 11950889 },
     { url = "https://files.pythonhosted.org/packages/b9/c5/fc1b368f303087d20e8c9bf3d6ceb186263cfac0ade735cd938538bea839/pandas-3.0.3-cp312-cp312-win_amd64.whl", hash = "sha256:c7be265b62cef88e253a941e4698604973736dcfe242fdb5198f0f7bc473cdcc", size = 9755463 },
     { url = "https://files.pythonhosted.org/packages/86/bd/fda8f9705b1b09c6ebe14bfc0fa0e4ec8584d54ea673628f157ff55131af/pandas-3.0.3-cp312-cp312-win_arm64.whl", hash = "sha256:557409bc4178e70ee8d9ddb494798e51ebf6ea59330f6be22c51bab2a7db6c49", size = 9066158 },
-]
-
-[[package]]
-name = "passlib"
-version = "1.7.4"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/b6/06/9da9ee59a67fae7761aab3ccc84fa4f3f33f125b370f1ccdb915bf967c11/passlib-1.7.4.tar.gz", hash = "sha256:defd50f72b65c5402ab2c573830a6978e5f202ad0d984793c8dde2c4152ebe04", size = 689844 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3b/a4/ab6b7589382ca3df236e03faa71deac88cae040af60c071a78d254a62172/passlib-1.7.4-py2.py3-none-any.whl", hash = "sha256:aa6bca462b8d8bda89c70b382f0c298a20b5560af6cbfa2dce410c0a2fb669f1", size = 525554 },
-]
-
-[package.optional-dependencies]
-bcrypt = [
-    { name = "bcrypt" },
 ]
 
 [[package]]
