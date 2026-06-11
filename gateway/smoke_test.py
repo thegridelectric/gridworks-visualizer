@@ -56,7 +56,7 @@ async def run() -> None:
         )
 
     try:
-        async with websockets.connect(f"ws://127.0.0.1:{PORT}/wsoak") as ws:
+        async with websockets.connect(f"ws://127.0.0.1:{PORT}/realtime/oak") as ws:
             # 1. Connect before any data: empty status.
             msg = await recv_json(ws)
             assert msg["type"] == "status", msg
@@ -104,7 +104,7 @@ async def run() -> None:
             print("PASS: request_snapshot answered from cache")
 
             # 6. New client connecting later gets cached state immediately.
-            async with websockets.connect(f"ws://127.0.0.1:{PORT}/wsoak") as ws2:
+            async with websockets.connect(f"ws://127.0.0.1:{PORT}/realtime/oak") as ws2:
                 status = await recv_json(ws2)
                 mqtt = await recv_json(ws2)
                 assert status["target_gnode"] == GNODE

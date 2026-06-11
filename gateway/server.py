@@ -1,7 +1,7 @@
 """FastAPI app: WebSocket fan-out per house plus a health endpoint.
 
-The WebSocket wire format is identical to the per-house webinter the gateway
-replaces, so existing dashboard clients keep working:
+The WebSocket wire format matches the legacy per-house webinter; the URL path
+is `/realtime/{alias}`:
 
   - server -> client: {"type": "status", ...}
   - server -> client: {"type": "mqtt_message", "message_type":
@@ -137,8 +137,7 @@ def create_app(settings: GatewaySettings | None = None) -> FastAPI:
         if (snapshot_message := state.snapshot_message()) is not None:
             await websocket.send_text(json.dumps(snapshot_message))
 
-    # Path matches the legacy scheme, e.g. /wsoak, /wsfir.
-    @app.websocket("/ws{house_alias}")
+    @app.websocket("/realtime/{house_alias}")
     async def websocket_endpoint(websocket: WebSocket, house_alias: str) -> None:
         await websocket.accept()
         manager.add(house_alias, websocket)

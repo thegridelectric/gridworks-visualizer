@@ -40,7 +40,7 @@ def decode_routing_key(routing_key: str) -> DecodedRoutingKey | None:
 def short_alias_from_gnode(g_node_alias: str) -> str | None:
     """hw1.isone.me.versant.keene.oak.scada -> oak
 
-    Same rule the per-house webinter used to derive its /ws{alias} path.
+    Same rule used to derive the house short alias from its g-node path.
     """
     parts = g_node_alias.split(".")
     if len(parts) < 2:
