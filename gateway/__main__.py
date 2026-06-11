@@ -1,5 +1,3 @@
-"""Entry point: python -m gateway (from the repo root)."""
-
 import logging
 
 import dotenv
