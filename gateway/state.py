@@ -1,17 +1,18 @@
-"""In-memory per-house cache of the latest layout and snapshot."""
-
 import re
 import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-from gateway.topics import short_alias_from_gnode
-
-# Same pattern the per-house webinter used to derive thermostat names from
-# layout data channels (zone1-living-rm-temp / -set / -state).
 THERMOSTAT_CHANNEL_PATTERN = re.compile(
     r"^zone(?P<zone_number>\d+)-(?P<human_name>.*)-(temp|set|state)$"
 )
+
+
+def short_alias_from_gnode(g_node_alias: str) -> str | None:
+    parts = g_node_alias.split(".")
+    if len(parts) < 2:
+        return None
+    return parts[-2]
 
 
 def thermostat_names_from_layout(layout: dict) -> list[str]:
@@ -21,6 +22,18 @@ def thermostat_names_from_layout(layout: dict) -> list[str]:
         if match and (human_name := match.group("human_name")) not in names:
             names.append(human_name)
     return names
+
+
+def empty_status_message(connected_clients: int) -> dict:
+    return {
+        "type": "status",
+        "mqtt_connected": True,
+        "layout_loaded": False,
+        "snapshot_loaded": False,
+        "target_gnode": "",
+        "thermostat_names": [],
+        "connected_clients": connected_clients,
+    }
 
 
 @dataclass
@@ -40,7 +53,6 @@ class HouseState:
         return int(self.snapshot.get("SnapshotTimeUnixMs", 0))
 
     def status_message(self, connected_clients: int) -> dict:
-        """Wire format matches what the webinter sent (type: status)."""
         last_activity = "Never"
         if self.last_message_time:
             last_activity = f"{int(time.time() - self.last_message_time)}s ago"
@@ -57,7 +69,6 @@ class HouseState:
         }
 
     def snapshot_message(self) -> Optional[dict]:
-        """Wire format matches what the webinter sent (type: mqtt_message)."""
         if self.snapshot is None:
             return None
         return {
@@ -98,9 +109,6 @@ class HouseStateStore:
         return state
 
     def update_snapshot(self, g_node_alias: str, snapshot: dict) -> Optional[HouseState]:
-        """Returns the updated state, or None if the snapshot is a stale
-        duplicate (the SCADA sends snapshots both to the LTN and, when admin
-        is enabled, to admin -- both copies arrive here)."""
         state = self._get_or_create(g_node_alias)
         if state is None:
             return None

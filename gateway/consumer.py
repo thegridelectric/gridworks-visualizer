@@ -1,23 +1,13 @@
-"""AMQP consumer: one connection to RabbitMQ for all houses.
-
-The SCADAs publish over the broker's MQTT plugin, which routes every message
-into the `amq.topic` exchange. We bind an exclusive auto-delete queue with a
-wildcard binding key, so the gateway observes all SCADA traffic without the
-SCADAs (or LTNs) knowing it exists, and without leaving a backlog queue
-behind when the gateway is down (a missed snapshot is replaced ~30s later by
-the next one anyway).
-"""
-
 import asyncio
 import json
 import logging
+from dataclasses import dataclass
 from typing import Awaitable, Callable
 
 import aio_pika
 
 from gateway.config import GatewaySettings
 from gateway.state import HouseState, HouseStateStore
-from gateway.topics import decode_routing_key
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +15,28 @@ LAYOUT_LITE = "layout.lite"
 SNAPSHOT_SPACEHEAT = "snapshot.spaceheat"
 HANDLED_MESSAGE_TYPES = {LAYOUT_LITE, SNAPSHOT_SPACEHEAT}
 
-# Called with the updated house state whenever a house has fresh data to
-# broadcast to its WebSocket clients.
 HouseUpdateCallback = Callable[[HouseState], Awaitable[None]]
+
+
+@dataclass(frozen=True)
+class DecodedRoutingKey:
+    envelope_type: str
+    src: str
+    dst: str
+    message_type: str
+
+
+def decode_routing_key(routing_key: str) -> DecodedRoutingKey | None:
+    """Decode an AMQP routing key into its gw-topic components."""
+    parts = routing_key.split(".")
+    if len(parts) < 5 or parts[2] != "to":
+        return None
+    return DecodedRoutingKey(
+        envelope_type=parts[0],
+        src=parts[1].replace("-", "."),
+        dst=parts[3].replace("-", "."),
+        message_type=parts[4].replace("-", "."),
+    )
 
 
 async def consume(
@@ -35,7 +44,6 @@ async def consume(
     store: HouseStateStore,
     on_house_update: HouseUpdateCallback,
 ) -> None:
-    """Run forever; connect_robust transparently reconnects on broker loss."""
     connection = await aio_pika.connect_robust(settings.rabbit_url.get_secret_value())
     async with connection:
         channel = await connection.channel()
@@ -74,22 +82,23 @@ async def _handle_message(
     decoded = decode_routing_key(routing_key)
     if decoded is None:
         return
-    # Only telemetry published by a SCADA is of interest.
     if not decoded.src.endswith(".scada"):
         return
     if decoded.message_type not in HANDLED_MESSAGE_TYPES:
         return
 
-    envelope = json.loads(body)
-    payload = envelope.get("Payload")
+    message = json.loads(body)
+    payload = message.get("Payload")
     if not isinstance(payload, dict):
         logger.warning("Message %r has no dict Payload", routing_key)
         return
 
     if decoded.message_type == LAYOUT_LITE:
         state = store.update_layout(decoded.src, payload)
-    else:
+    elif decoded.message_type == SNAPSHOT_SPACEHEAT:
         state = store.update_snapshot(decoded.src, payload)
+    else:
+        return
     if state is not None:
         await on_house_update(state)
 
@@ -99,8 +108,6 @@ async def run_consumer_forever(
     store: HouseStateStore,
     on_house_update: HouseUpdateCallback,
 ) -> None:
-    """Restart the consumer if it ever exits with an error (connect_robust
-    handles reconnects, but the initial connect can still fail)."""
     while True:
         try:
             await consume(settings, store, on_house_update)

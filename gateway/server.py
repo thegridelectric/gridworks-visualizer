@@ -1,27 +1,16 @@
-"""FastAPI app: WebSocket fan-out per house plus a health endpoint.
-
-The WebSocket wire format matches the legacy per-house webinter; the URL path
-is `/realtime/{alias}`:
-
-  - server -> client: {"type": "status", ...}
-  - server -> client: {"type": "mqtt_message", "message_type":
-    "snapshot.spaceheat", "payload": {...}}
-  - client -> server: {"type": "get_status" | "request_snapshot", ...} both
-    answered from the cache. Control messages (relay_control etc.) are not
-    supported: the gateway is read-only.
-"""
-
 import asyncio
 import contextlib
 import json
 import logging
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from gateway.config import GatewaySettings
 from gateway.consumer import run_consumer_forever
-from gateway.state import HouseState, HouseStateStore
+from gateway.state import HouseState, HouseStateStore, empty_status_message
 
 logger = logging.getLogger(__name__)
 
@@ -56,43 +45,34 @@ class ConnectionManager:
                 for text in encoded:
                     await websocket.send_text(text)
             except Exception:
-                # Disconnects are cleaned up by the endpoint's finally block;
-                # just don't let one dead client break the broadcast.
                 logger.debug("Failed to send to a client of %r", short_alias)
 
 
-def create_app(settings: GatewaySettings | None = None) -> FastAPI:
-    settings = settings or GatewaySettings()
+def create_app(settings: GatewaySettings) -> FastAPI:
     store = HouseStateStore()
     manager = ConnectionManager()
     started_at = time.time()
 
     async def on_house_update(state: HouseState) -> None:
-        # Status first, then snapshot: same order the webinter used.
         messages = [state.status_message(manager.client_count(state.short_alias))]
         if (snapshot_message := state.snapshot_message()) is not None:
             messages.append(snapshot_message)
         await manager.broadcast(state.short_alias, messages)
 
-    app = FastAPI(title="GridWorks Realtime Gateway")
-    app.state.settings = settings
-    app.state.store = store
-    app.state.manager = manager
-    app.state.on_house_update = on_house_update
-
-    @app.on_event("startup")
-    async def start_consumer() -> None:
-        app.state.consumer_task = asyncio.create_task(
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        consumer_task = asyncio.create_task(
             run_consumer_forever(settings, store, on_house_update)
         )
+        try:
+            yield
+        finally:
+            consumer_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await consumer_task
 
-    @app.on_event("shutdown")
-    async def stop_consumer() -> None:
-        app.state.consumer_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await app.state.consumer_task
+    app = FastAPI(title="GridWorks Realtime Gateway", lifespan=lifespan)
 
-    @app.get("/gateway/health")
     async def health() -> dict:
         return {
             "status": "ok",
@@ -115,20 +95,8 @@ def create_app(settings: GatewaySettings | None = None) -> FastAPI:
     async def send_cached(websocket: WebSocket, short_alias: str) -> None:
         state = store.get(short_alias)
         if state is None:
-            # No data from this house yet (or unknown alias): report an empty
-            # status so the client renders its "waiting" state.
             await websocket.send_text(
-                json.dumps(
-                    {
-                        "type": "status",
-                        "mqtt_connected": True,
-                        "layout_loaded": False,
-                        "snapshot_loaded": False,
-                        "target_gnode": "",
-                        "thermostat_names": [],
-                        "connected_clients": manager.client_count(short_alias),
-                    }
-                )
+                json.dumps(empty_status_message(manager.client_count(short_alias)))
             )
             return
         await websocket.send_text(
@@ -137,7 +105,6 @@ def create_app(settings: GatewaySettings | None = None) -> FastAPI:
         if (snapshot_message := state.snapshot_message()) is not None:
             await websocket.send_text(json.dumps(snapshot_message))
 
-    @app.websocket("/realtime/{house_alias}")
     async def websocket_endpoint(websocket: WebSocket, house_alias: str) -> None:
         await websocket.accept()
         manager.add(house_alias, websocket)
@@ -165,5 +132,8 @@ def create_app(settings: GatewaySettings | None = None) -> FastAPI:
                 house_alias,
                 manager.client_count(house_alias),
             )
+
+    app.add_api_route("/gateway/health", health, methods=["GET"])
+    app.add_api_websocket_route("/realtime/{house_alias}", websocket_endpoint)
 
     return app
